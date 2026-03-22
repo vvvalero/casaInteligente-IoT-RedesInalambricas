@@ -1,31 +1,26 @@
-# credentials.example.py — Plantilla de credenciales TTN
+# credentials.example.py — Plantilla de credenciales y configuración
 # ============================================================
 # INSTRUCCIONES:
-#   1. Copia este fichero: cp credentials.example.py credentials.py
+#   1. Copia: cp credentials.example.py credentials.py
 #   2. Rellena los valores con los de TTN Console
-#   3. NUNCA subas credentials.py a GitHub (está en .gitignore)
+#   3. NUNCA subas credentials.py a GitHub
 #
-# Dónde obtener los valores:
-#   TTN Console → Applications → [tu-app] →
-#   End devices → [tu-dispositivo] → Overview
-#
-# IMPORTANTE sobre el formato:
-#   - APP_EUI y APP_KEY se copian tal cual aparecen en TTN (MSB)
-#   - Elimina los espacios: 'AD A4 DA...' → 'ADA4DA...'
+# NODE_TYPE define el comportamiento completo del nodo:
+#   'salon'      → Nodo 1: sensores completos + acelerómetro + LED RGB
+#   'dormitorio' → Nodo 2: sensores + NFC PN532 + LED acceso
+#   'exterior'   → Nodo 3: sensores + BLE scanner + LED alerta
 # ============================================================
 
 import binascii
 
-# AppEUI / JoinEUI (8 bytes, MSB, sin espacios)
+# Credenciales TTN
 APP_EUI = binascii.unhexlify('XXXXXXXXXXXXXXXX')
-
-# AppKey (16 bytes, MSB, sin espacios)
 APP_KEY = binascii.unhexlify('XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX')
 
-# Habitación donde está instalado este dispositivo
-# 1=salon  2=cocina  3=dormitorio  4=bano  5=exterior
-DEVICE_ROOM = 1
+# Tipo de nodo — define qué sensores y comportamiento activa
+# Valores válidos: 'salon' | 'dormitorio' | 'exterior'
+NODE_TYPE = 'salon'
 
 # Intervalo entre envíos en segundos
-# Pruebas: 60  |  Producción: 900 (15 min, respeta duty cycle TTN)
+# Pruebas: 60  |  Producción: 900
 TX_INTERVAL = 60

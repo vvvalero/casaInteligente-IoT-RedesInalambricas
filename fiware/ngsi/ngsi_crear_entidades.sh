@@ -1,176 +1,84 @@
 #!/bin/bash
-# ngsi_crear_entidades.sh
-# Crea todas las entidades NGSI-v2 de la casa inteligente en Orion Context Broker
-#
-# Entidades:
-#   - 1 entidad House (la casa)
-#   - 5 entidades Room (salón, cocina, dormitorio, baño, exterior)
-#   - 5 entidades Sensor (uno por habitación)
-#   - 5 entidades Lamp   (lámpara por habitación)
-#   - 5 entidades AC     (aire acondicionado por habitación)
-#   - 1 entidad Alarm    (alarma general de la casa)
-#
-# Uso: bash ngsi_crear_entidades.sh
+# ngsi_crear_entidades.sh — Casa Inteligente IoT (3 nodos)
+# Entidades: House, 3 Rooms, 3 Sensors, AccessLog base, Alerts base
 
 ORION="http://localhost:1026"
-HEADERS='-H "Content-Type: application/json" -H "fiware-service: smarthome" -H "fiware-servicepath: /"'
+CT='-H "Content-Type: application/json"'
 FS='-H "fiware-service: smarthome" -H "fiware-servicepath: /"'
 
-echo "=============================================="
-echo " Creando entidades Casa Inteligente NGSI-v2"
-echo "=============================================="
-
-# -------------------------------------------------------
-# 1. CASA
-# -------------------------------------------------------
-echo "[1/4] Creando entidad House..."
-curl -s -o /dev/null -w "House → HTTP %{http_code}\n" -iX POST "$ORION/v2/entities" \
-  -H 'Content-Type: application/json' \
-  -H 'fiware-service: smarthome' \
-  -H 'fiware-servicepath: /' \
-  -d '{
-    "id":   "urn:ngsi-ld:House:001",
-    "type": "House",
-    "name": { "type": "Text",          "value": "Casa Inteligente IoT" },
-    "address": {
-      "type": "PostalAddress",
-      "value": {
-        "streetAddress":    "C/ Ejemplo, 1",
-        "addressLocality":  "Albacete",
-        "postalCode":       "02001",
-        "addressCountry":   "ES"
-      }
-    },
-    "location": {
-      "type": "geo:json",
-      "value": { "type": "Point", "coordinates": [-1.8570, 38.9909] }
-    },
-    "numRooms": { "type": "Integer", "value": 5 }
-  }'
-
-# -------------------------------------------------------
-# 2. HABITACIONES (5)
-# -------------------------------------------------------
-echo "[2/4] Creando habitaciones..."
-
-declare -A ROOMS
-ROOMS["salon"]="Salón"
-ROOMS["cocina"]="Cocina"
-ROOMS["dormitorio"]="Dormitorio Principal"
-ROOMS["bano"]="Baño"
-ROOMS["exterior"]="Exterior / Jardín"
-
-declare -A ROOM_AREA
-ROOM_AREA["salon"]=35
-ROOM_AREA["cocina"]=15
-ROOM_AREA["dormitorio"]=20
-ROOM_AREA["bano"]=8
-ROOM_AREA["exterior"]=50
-
-declare -A ROOM_FLOOR
-ROOM_FLOOR["salon"]=1
-ROOM_FLOOR["cocina"]=1
-ROOM_FLOOR["dormitorio"]=2
-ROOM_FLOOR["bano"]=2
-ROOM_FLOOR["exterior"]=0
-
-for room_id in salon cocina dormitorio bano exterior; do
-  curl -s -o /dev/null -w "Room:$room_id → HTTP %{http_code}\n" -iX POST "$ORION/v2/entities" \
+_post() {
+  curl -s -o /dev/null -w "$1 → HTTP %{http_code}\n" -iX POST "$ORION/v2/entities" \
     -H 'Content-Type: application/json' \
     -H 'fiware-service: smarthome' \
     -H 'fiware-servicepath: /' \
-    -d "{
-      \"id\":   \"urn:ngsi-ld:Room:$room_id\",
-      \"type\": \"Room\",
-      \"name\":  { \"type\": \"Text\",    \"value\": \"${ROOMS[$room_id]}\" },
-      \"floor\": { \"type\": \"Integer\", \"value\": ${ROOM_FLOOR[$room_id]} },
-      \"area\":  {
-        \"type\": \"Number\", \"value\": ${ROOM_AREA[$room_id]},
-        \"metadata\": { \"unitCode\": { \"type\": \"Text\", \"value\": \"M2\" } }
-      },
-      \"refHouse\": { \"type\": \"Relationship\", \"value\": \"urn:ngsi-ld:House:001\" }
-    }"
+    -d "$2"
+}
+
+echo "======================================"
+echo " Creando entidades Casa Inteligente"
+echo "======================================"
+
+# ---- CASA ----
+_post "House:001" '{
+  "id":"urn:ngsi-ld:House:001","type":"House",
+  "name":{"type":"Text","value":"Casa Inteligente IoT"},
+  "address":{"type":"PostalAddress","value":{
+    "streetAddress":"C/ Ejemplo, 1","addressLocality":"Albacete",
+    "postalCode":"02001","addressCountry":"ES"}},
+  "location":{"type":"geo:json","value":{"type":"Point","coordinates":[-1.8570,38.9909]}},
+  "numRooms":{"type":"Integer","value":3}
+}'
+
+# ---- HABITACIONES ----
+for data in \
+  '{"id":"urn:ngsi-ld:Room:salon","type":"Room","name":{"type":"Text","value":"Salon"},"floor":{"type":"Integer","value":1},"area":{"type":"Number","value":35},"refHouse":{"type":"Relationship","value":"urn:ngsi-ld:House:001"}}' \
+  '{"id":"urn:ngsi-ld:Room:dormitorio","type":"Room","name":{"type":"Text","value":"Dormitorio"},"floor":{"type":"Integer","value":2},"area":{"type":"Number","value":20},"refHouse":{"type":"Relationship","value":"urn:ngsi-ld:House:001"}}' \
+  '{"id":"urn:ngsi-ld:Room:exterior","type":"Room","name":{"type":"Text","value":"Exterior"},"floor":{"type":"Integer","value":0},"area":{"type":"Number","value":50},"refHouse":{"type":"Relationship","value":"urn:ngsi-ld:House:001"}}'; do
+  id=$(echo $data | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+  _post "$id" "$data"
 done
 
-# -------------------------------------------------------
-# 3. SENSORES (1 por habitación)
-#    Atributos activos (temperatura, humedad, luminosidad, presencia)
-#    se inicializan en null — serán rellenados por el IoT Agent
-# -------------------------------------------------------
-echo "[3/4] Creando sensores..."
+# ---- SENSORES ----
+# Sensor:s1 — Salón (temp, hum, lux, presión, acelerómetro)
+_post "Sensor:s1" '{
+  "id":"Sensor:s1","type":"Sensor",
+  "name":{"type":"Text","value":"Nodo Salon"},
+  "refRoom":{"type":"Relationship","value":"urn:ngsi-ld:Room:salon"},
+  "nodeType":{"type":"Text","value":"salon"}
+}'
 
-SENSOR_NUM=1
-for room_id in salon cocina dormitorio bano exterior; do
-  SENSOR_ID="s$SENSOR_NUM"
-  curl -s -o /dev/null -w "Sensor:$SENSOR_ID → HTTP %{http_code}\n" -iX POST "$ORION/v2/entities" \
-    -H 'Content-Type: application/json' \
-    -H 'fiware-service: smarthome' \
-    -H 'fiware-servicepath: /' \
-    -d "{
-      \"id\":   \"Sensor:$SENSOR_ID\",
-      \"type\": \"Sensor\",
-      \"name\": { \"type\": \"Text\", \"value\": \"urn:ngsi-ld:Sensor:$SENSOR_ID\" },
-      \"refRoom\": { \"type\": \"Relationship\", \"value\": \"urn:ngsi-ld:Room:$room_id\" }
-    }"
-  SENSOR_NUM=$((SENSOR_NUM + 1))
+# Sensor:s2 — Dormitorio (temp, hum, lux, NFC)
+_post "Sensor:s2" '{
+  "id":"Sensor:s2","type":"Sensor",
+  "name":{"type":"Text","value":"Nodo Dormitorio"},
+  "refRoom":{"type":"Relationship","value":"urn:ngsi-ld:Room:dormitorio"},
+  "nodeType":{"type":"Text","value":"dormitorio"},
+  "nfcAuthorizedUIDs":{"type":"Text","value":"A1B2C3D4,DEADBEEF"}
+}'
+
+# Sensor:s3 — Exterior (temp, hum, presión, BLE)
+_post "Sensor:s3" '{
+  "id":"Sensor:s3","type":"Sensor",
+  "name":{"type":"Text","value":"Nodo Exterior"},
+  "refRoom":{"type":"Relationship","value":"urn:ngsi-ld:Room:exterior"},
+  "nodeType":{"type":"Text","value":"exterior"},
+  "aforoMaximo":{"type":"Integer","value":5}
+}'
+
+# ---- ALERTAS INICIALES (vacías, se actualizarán dinámicamente) ----
+for tipo in temp_high temp_low humidity vibration aforo nfc_denied pressure_low; do
+  _post "Alert:$tipo" "{
+    \"id\":\"Alert:$tipo\",\"type\":\"Alert\",
+    \"alertType\":{\"type\":\"Text\",\"value\":\"$tipo\"},
+    \"active\":{\"type\":\"Boolean\",\"value\":false},
+    \"message\":{\"type\":\"Text\",\"value\":\"\"},
+    \"severity\":{\"type\":\"Text\",\"value\":\"info\"},
+    \"refSensor\":{\"type\":\"Relationship\",\"value\":\"\"},
+    \"timestamp\":{\"type\":\"DateTime\",\"value\":\"1970-01-01T00:00:00Z\"}
+  }"
 done
-
-# -------------------------------------------------------
-# 4. ACTUADORES
-#    4a. Lámparas (1 por habitación)
-#    4b. Aires acondicionados (1 por habitación)
-#    4c. Alarma (1 general de la casa)
-# -------------------------------------------------------
-echo "[4/4] Creando actuadores..."
-
-AC_NUM=1
-LAMP_NUM=1
-for room_id in salon cocina dormitorio bano exterior; do
-  # Lámpara
-  curl -s -o /dev/null -w "Lamp:lamp$LAMP_NUM → HTTP %{http_code}\n" -iX POST "$ORION/v2/entities" \
-    -H 'Content-Type: application/json' \
-    -H 'fiware-service: smarthome' \
-    -H 'fiware-servicepath: /' \
-    -d "{
-      \"id\":   \"Lamp:lamp$LAMP_NUM\",
-      \"type\": \"Lamp\",
-      \"name\": { \"type\": \"Text\", \"value\": \"urn:ngsi-ld:Lamp:lamp$LAMP_NUM\" },
-      \"refRoom\": { \"type\": \"Relationship\", \"value\": \"urn:ngsi-ld:Room:$room_id\" }
-    }"
-
-  # Aire Acondicionado
-  curl -s -o /dev/null -w "AC:ac$AC_NUM → HTTP %{http_code}\n" -iX POST "$ORION/v2/entities" \
-    -H 'Content-Type: application/json' \
-    -H 'fiware-service: smarthome' \
-    -H 'fiware-servicepath: /' \
-    -d "{
-      \"id\":   \"AC:ac$AC_NUM\",
-      \"type\": \"AC\",
-      \"name\": { \"type\": \"Text\", \"value\": \"urn:ngsi-ld:AC:ac$AC_NUM\" },
-      \"refRoom\": { \"type\": \"Relationship\", \"value\": \"urn:ngsi-ld:Room:$room_id\" }
-    }"
-
-  LAMP_NUM=$((LAMP_NUM + 1))
-  AC_NUM=$((AC_NUM + 1))
-done
-
-# Alarma general
-curl -s -o /dev/null -w "Alarm:alarm001 → HTTP %{http_code}\n" -iX POST "$ORION/v2/entities" \
-  -H 'Content-Type: application/json' \
-  -H 'fiware-service: smarthome' \
-  -H 'fiware-servicepath: /' \
-  -d '{
-    "id":   "Alarm:alarm001",
-    "type": "Alarm",
-    "name": { "type": "Text", "value": "urn:ngsi-ld:Alarm:alarm001" },
-    "refHouse": { "type": "Relationship", "value": "urn:ngsi-ld:House:001" }
-  }'
 
 echo ""
-echo "✅ Entidades creadas. Verificando con GET /v2/entities..."
-curl -s "$ORION/v2/entities?options=keyValues" \
-  -H 'fiware-service: smarthome' \
-  -H 'fiware-servicepath: /' | python3 -m json.tool 2>/dev/null || \
-curl -s "$ORION/v2/entities?options=keyValues" \
-  -H 'fiware-service: smarthome' \
-  -H 'fiware-servicepath: /'
+echo "Verificando entidades creadas:"
+curl -s "$ORION/v2/entities?options=keyValues&type=Sensor,Room,House,Alert" \
+  -H 'fiware-service: smarthome' -H 'fiware-servicepath: /' | python3 -m json.tool 2>/dev/null || echo "(instala python3 para formato legible)"
