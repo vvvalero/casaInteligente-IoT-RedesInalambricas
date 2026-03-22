@@ -1,0 +1,61 @@
+#!/bin/bash
+# services — Script de gestión del entorno Docker de la casa inteligente
+# Uso: ./services start | stop | status | reset
+
+COMPOSE_FILE="docker/docker-compose.yml"
+
+case "$1" in
+
+  start)
+    echo "🏠 Iniciando Casa Inteligente IoT..."
+    docker compose -f "$COMPOSE_FILE" up -d
+    echo ""
+    echo "⏳ Esperando a que los servicios estén disponibles..."
+    sleep 15
+
+    # Verificar Orion
+    echo -n "  Orion:     "
+    curl -s http://localhost:1026/version | python3 -c \
+      "import sys,json; d=json.load(sys.stdin); print('OK ✅  v' + d['orion']['version'])" \
+      2>/dev/null || echo "No disponible ❌"
+
+    # Verificar IoT Agent
+    echo -n "  IoT Agent: "
+    curl -s http://localhost:4041/iot/about | python3 -c \
+      "import sys,json; json.load(sys.stdin); print('OK ✅')" \
+      2>/dev/null || echo "No disponible ❌"
+
+    # Verificar MQTT
+    echo -n "  MQTT:      "
+    timeout 2 bash -c "echo > /dev/tcp/localhost/1883" 2>/dev/null \
+      && echo "OK ✅  puerto 1883" || echo "No disponible ❌"
+
+    echo ""
+    echo "▶  Próximos pasos:"
+    echo "   1. bash fiware/ngsi/ngsi_crear_entidades.sh"
+    echo "   2. bash fiware/iot-agent/iot_agent_setup.sh"
+    echo "   3. bash fiware/subscriptions/ngsi_subscripciones.sh"
+    echo "   4. python3 scripts/notification_server.py"
+    ;;
+
+  stop)
+    echo "🛑 Deteniendo servicios..."
+    docker compose -f "$COMPOSE_FILE" down
+    echo "Servicios detenidos."
+    ;;
+
+  status)
+    docker compose -f "$COMPOSE_FILE" ps
+    ;;
+
+  reset)
+    echo "⚠️  Eliminando todos los contenedores y volúmenes..."
+    docker compose -f "$COMPOSE_FILE" down -v
+    echo "Reset completado. Ejecuta './services start' para reiniciar."
+    ;;
+
+  *)
+    echo "Uso: $0 {start|stop|status|reset}"
+    exit 1
+    ;;
+esac

@@ -1,0 +1,144 @@
+# ============================================================
+# .gitignore — Casa Inteligente IoT
+# ============================================================
+
+
+# ============================================================
+# CREDENCIALES Y SECRETOS — nunca subir a GitHub
+# ============================================================
+
+# Credenciales TTN de cada LoPy4 (APP_EUI, APP_KEY, DEVICE_ROOM)
+lopy4/credentials.py
+
+# Credenciales reales del ESP32
+esp32/include/config_secret.h
+
+# Variables de entorno
+.env
+.env.local
+.env.*.local
+*.env
+
+# Claves y certificados
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+credentials/
+
+
+# ============================================================
+# PYTHON
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+ENV/
+scripts/.venv/
+
+# Distribución
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+
+# ============================================================
+# MICROPYTHON / LOPY4 / PYMAKR
+# ============================================================
+*.mpy
+.pymakr-sync/
+lopy4/.pymakr-sync/
+
+
+# ============================================================
+# ARDUINO / ESP32
+# ============================================================
+build/
+*.elf
+*.bin
+*.hex
+*.map
+esp32/libraries/
+
+
+# ============================================================
+# DOCKER
+# ============================================================
+docker/volumes/
+docker/data/
+mosquitto/data/
+mosquitto/log/
+docker-compose.override.yml
+docker-compose.local.yml
+
+
+# ============================================================
+# SISTEMA OPERATIVO
+# ============================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.nfs*
+
+
+# ============================================================
+# EDITORES
+# ============================================================
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.iml
+*.swp
+*.swo
+
+
+# ============================================================
+# LOGS Y TEMPORALES
+# ============================================================
+*.log
+*.tmp
+*.temp
+logs/
+tmp/
+
+
+# ============================================================
+# NODE.JS
+# ============================================================
+node_modules/
+npm-debug.log*
+package-lock.json
