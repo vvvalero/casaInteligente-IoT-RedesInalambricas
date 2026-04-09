@@ -124,15 +124,19 @@ elif NODE_TYPE == 'exterior':
 # CONEXION LORAWAN (OTAA)
 # ============================================================
 lora = LoRa(mode=LoRa.LORAWAN, region=LoRa.EU868)
-lora.join(activation=LoRa.OTAA, auth=(APP_EUI, APP_KEY), timeout=0)
+lora.nvram_erase()
 
 print('Intentando join OTAA...')
 while not lora.has_joined():
     sistema_join_espera()
-    time.sleep(2.5)
-    pycom.rgbled(0x000000)
-    time.sleep(1.0)
-    print('  Esperando join...')
+    try:
+        lora.join(activation=LoRa.OTAA, auth=(APP_EUI, APP_KEY), timeout=15000)
+    except OSError:
+        pass
+    if not lora.has_joined():
+        pycom.rgbled(0x000000)
+        time.sleep(2)
+        print('  Esperando join...')
 
 print('Join completado!')
 sistema_conectado()
