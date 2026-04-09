@@ -144,7 +144,7 @@ def r_lux_exterior(d, sid):
 
 def r_presion(d, sid):
     p = d.get("barometricPressure")
-    if p is None or p >= 1000: return
+    if p is None or p >= 950: return
     logging.warning(f"Presion baja: {p} hPa en {sid}")
     _alerta("pressure_low", True, f"Presion baja: {p} hPa", "warning", sid)
     _downlink(sid, [0x02, 255, 0, 0])   # LED rojo parpadeante
