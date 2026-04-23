@@ -7,27 +7,32 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                  3× LoPy4 + Pysense + LEDs en protoboard         │
+│                       3× LoPy4 + Pysense                        │
 │                                                                  │
 │  Nodo 1 — Salón          Nodo 2 — Dormitorio   Nodo 3 — Exterior │
 │  SI7006A20 (T+H)         SI7006A20 (T+H)       SI7006A20 (T+H)  │
 │  LTR329ALS01 (lux)       LTR329ALS01 (lux)     MPL3115A2 (pres) │
-│  MPL3115A2 (presión)     PN532 NFC              BLE scanner      │
-│  LIS2HH12 (aceleróm.)    LED externo RGB        LED externo RGB  │
-│  LED externo RGB                                                  │
+│  MPL3115A2 (presión)     PN532 NFC (I²C)        BLE scanner      │
+│  LIS2HH12 (aceleróm.)    LED RGB integrado      LED RGB integrado │
 └─────────────────────────────┬────────────────────────────────────┘
                               │ LoRaWAN OTAA EU868 · Cayenne LPP
                               ▼
                  ┌────────────────────────┐
                  │   The Things Network   │
+                 │   ttn_payload_         │
+                 │   formatter.js         │
                  │   decodeUplink /       │
                  │   encodeDownlink       │
                  └────────────┬───────────┘
-                              │ HTTP Webhook (JSON)
+                              │ HTTPS Webhook → api.vvalero.dev
                  ┌────────────▼───────────────────────────┐
                  │         FIWARE STACK (Docker)           │
-                 │  IoT Agent → Orion Context Broker       │
-                 │  Sensor:s1/s2/s3 · Alert:* · AccessLog │
+                 │                                        │
+                 │  Nginx (proxy TLS) → IoT Agent         │
+                 │  IoT Agent → Orion Context Broker      │
+                 │                    │                   │
+                 │  Sensor:s1/s2/s3   MongoDB             │
+                 │  Alert:*           AccessLog:N          │
                  └────────────┬───────────────────────────┘
                               │ Suscripciones NGSI-v2
                               ▼
@@ -39,11 +44,24 @@
 
 ---
 
+## Despliegue
+
+El sistema soporta dos modos de despliegue:
+
+| Modo | Cuándo usarlo | Comando |
+|---|---|---|
+| **Local (WSL2)** | Desarrollo y pruebas | `./services start` |
+| **DMZ Universidad** | Demo y producción | `./services_dmz start` |
+
+En el modo DMZ, el sistema se expone en `https://api.vvalero.dev` con certificado TLS automático (Let's Encrypt). El subdominio `api.vvalero.dev` apunta mediante registro DNS tipo A a la IP pública de la VM universitaria.
+
+---
+
 ## Requisitos previos
 
-- **Hardware**: 3× LoPy4 + Pysense, módulo PN532 NFC, LEDs y resistencias 220Ω, protoboard
-- **Software**: VS Code + extensión Pymakr, WSL2 con Ubuntu, Docker Engine
-- **Cuentas**: The Things Network (gratuita en [eu1.cloud.thethings.network](https://eu1.cloud.thethings.network))
+- **Hardware**: 3× LoPy4 + Pysense, módulo PN532 NFC
+- **Software**: VS Code + extensión Pymakr, WSL2 Ubuntu, Docker Engine
+- **Cuentas**: The Things Network — [eu1.cloud.thethings.network](https://eu1.cloud.thethings.network)
 
 ---
 
@@ -66,11 +84,11 @@ Repite para cada LoPy4 → **End devices** → **+ Register end device**:
 | LoRaWAN version | LoRaWAN Specification **1.0.2** |
 | Regional parameters | RP001 Regional Parameters 1.0.2 |
 | Frequency plan | Europe 863-870 MHz (SF9 for RX2) |
-| DevEUI | (leer del dispositivo con `LoRa().mac()`) |
+| DevEUI | (leer del dispositivo — aparece en el log de arranque) |
 | AppEUI | (generar o usar el que ya tienes) |
 | AppKey | (generar automáticamente) |
 
-> ⚠️ Es crítico usar LoRaWAN **1.0.2** — versiones distintas harán fallar el join OTAA.
+> ⚠️ Es crítico usar LoRaWAN **1.0.2** — otras versiones harán fallar el join OTAA.
 
 Anota para cada dispositivo: **DevEUI**, **AppEUI** y **AppKey**.
 
@@ -79,7 +97,7 @@ Anota para cada dispositivo: **DevEUI**, **AppEUI** y **AppKey**.
 TTN Console → tu aplicación → **Payload formatters** → **Uplink** → **Custom Javascript formatter**
 → Pega el contenido de `lopy4/ttn_payload_formatter.js` → **Save changes**
 
-Puedes verificarlo en la pestaña **Test** con este payload de ejemplo (nodo salón):
+Verifica en la pestaña **Test** con este payload de ejemplo (nodo salón):
 ```
 01 67 00 E7 02 68 6E 03 65 01 5E 04 73 27 94 05 71 00 0A FF F6 03 E8 06 00 01
 ```
@@ -130,22 +148,19 @@ Join completado!
   Uplink enviado
 ```
 
-Si el join no completa tras 20 intentos, revisa que las credenciales en
-`credentials.py` coinciden exactamente con las de TTN Console, y que
-el dispositivo está registrado como LoRaWAN 1.0.2.
+Si el join no completa, verifica que las credenciales coinciden exactamente con TTN Console y que el dispositivo está registrado como LoRaWAN 1.0.2.
 
 Repite los pasos 5 y 6 para los otros dos LoPy4 cambiando `NODE_TYPE`.
 
 #### Paso 7 · Verificar en TTN Live data
 
-TTN Console → tu aplicación → **Live data** → deberías ver los uplinks llegando
-con el payload ya decodificado en campos JSON (`temperature`, `humidity`, etc.).
+TTN Console → tu aplicación → **Live data** → los uplinks deben llegar con el payload decodificado en JSON (`temperature`, `humidity`, `room`, etc.).
 
 ---
 
-### PARTE 3 · Fiware en WSL2
+### PARTE 3 · Fiware en WSL2 (desarrollo local)
 
-> Todos los comandos siguientes se ejecutan en una terminal **Ubuntu (WSL2)**.
+> Todos los comandos se ejecutan en una terminal **Ubuntu (WSL2)**.
 
 #### Paso 8 · Clonar el repositorio
 
@@ -186,18 +201,23 @@ bash fiware/iot-agent/iot_agent_setup.sh
 bash fiware/subscriptions/ngsi_subscripciones.sh
 ```
 
-Los tres scripts deben devolver **HTTP 201** en todas las líneas.
+Todos los scripts deben devolver **HTTP 201** en todas las líneas.
+
+> La suscripción `[8] Acceso NFC` dará HTTP 400 la primera vez — es normal.
+> El tipo `AccessLog` no existe hasta el primer acceso NFC. Se creará automáticamente.
 
 #### Paso 11 · Configurar el servidor de automatización
 
-Edita `scripts/notification_server.py` y rellena estas dos secciones:
+Edita `scripts/notification_server.py` y rellena:
 
 ```python
-# Tu API key de TTN con permiso de downlink
-# TTN Console → Applications → API keys → Generate → Write downlink
 TTN_API_KEY = "NNSXS.TU_API_KEY_AQUI"
+# TTN Console → Applications → API keys → Generate
+# Permiso necesario: "Write downlink application traffic"
+```
 
-# End device IDs exactos de TTN Console → End devices
+Los Device IDs ya tienen los valores por defecto correctos:
+```python
 SENSOR_TO_TTN = {
     "Sensor:s1": "lopy4-salon",
     "Sensor:s2": "lopy4-dormitorio",
@@ -210,7 +230,7 @@ Arranca el servidor:
 bash scripts/arrancar_servidor.sh
 ```
 
-El script gestiona el entorno virtual automáticamente. Resultado esperado:
+El script crea el entorno virtual automáticamente. Resultado esperado:
 ```
 Casa Inteligente IoT - Servidor de notificaciones
 Servidor en http://0.0.0.0:5000
@@ -219,12 +239,8 @@ Servidor en http://0.0.0.0:5000
 
 #### Paso 12 · Configurar UIDs NFC autorizados
 
-Acerca una tarjeta NFC al nodo dormitorio y observa el log del servidor:
-```
-NFC UID=A1B2C3D4 authorized=False
-```
+Acerca una tarjeta NFC al nodo dormitorio y observa el log del servidor — aparecerá el UID detectado. Añádelo a la lista de autorizados:
 
-Añade el UID a la lista de autorizados:
 ```bash
 curl -X PATCH "http://localhost:1026/v2/entities/Sensor:s2/attrs?options=keyValues" \
   -H 'Content-Type: application/json' \
@@ -236,13 +252,14 @@ curl -X PATCH "http://localhost:1026/v2/entities/Sensor:s2/attrs?options=keyValu
 
 ### PARTE 4 · Conectar TTN con Fiware
 
-#### Paso 13 · Exponer Fiware a internet con ngrok
+#### Paso 13 · Exponer el IoT Agent a internet con ngrok (desarrollo local)
 
-En una nueva terminal WSL2:
 ```bash
-# Instalar ngrok si no lo tienes
-curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
-echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+# Instalar ngrok
+curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
+  | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+echo "deb https://ngrok-agent.s3.amazonaws.com buster main" \
+  | sudo tee /etc/apt/sources.list.d/ngrok.list
 sudo apt update && sudo apt install ngrok
 
 # Autenticar (cuenta gratuita en ngrok.com)
@@ -252,22 +269,22 @@ ngrok config add-authtoken TU_TOKEN_NGROK
 ngrok http 4041
 ```
 
-Copia la URL HTTPS que aparece: `https://xxxx.ngrok-free.app`
+Copia la URL HTTPS: `https://xxxx.ngrok-free.app`
+
+> En el DMZ universitario este paso no es necesario — se usa `https://api.vvalero.dev` directamente.
 
 #### Paso 14 · Crear el Webhook en TTN
 
 TTN Console → tu aplicación → **Integrations** → **Webhooks** → **+ Add webhook** → **Custom webhook**:
 
-| Campo | Valor |
-|---|---|
-| Webhook ID | `fiware-smarthome` |
-| Base URL | `https://xxxx.ngrok-free.app/iot/ul` |
-| Format | JSON |
-| Uplink message | ✓ activar checkbox |
-| Header 1 | `fiware-service: smarthome` |
-| Header 2 | `fiware-servicepath: /` |
-
-→ **Save changes**
+| Campo | Valor (local) | Valor (DMZ) |
+|---|---|---|
+| Webhook ID | `fiware-smarthome` | `fiware-smarthome` |
+| Base URL | `https://xxxx.ngrok-free.app/iot/ul` | `https://api.vvalero.dev/iot/ul` |
+| Format | JSON | JSON |
+| Uplink message | ✓ | ✓ |
+| Header 1 | `fiware-service: smarthome` | `fiware-service: smarthome` |
+| Header 2 | `fiware-servicepath: /` | `fiware-servicepath: /` |
 
 #### Paso 15 · Verificar la cadena completa
 
@@ -278,55 +295,52 @@ curl -s "http://localhost:1026/v2/entities/Sensor:s1?options=keyValues" \
   -H 'fiware-service: smarthome' | python3 -m json.tool
 ```
 
-Deberías ver `temperature`, `humidity`, `luminosity` etc. con valores reales.
+Deberías ver `temperature`, `humidity`, `luminosity` etc. con valores reales y actualizándose.
 
 ---
 
-## Comandos de verificación y gestión
+### PARTE 5 · Despliegue en DMZ universitario
+
+> Solo necesario para exposición pública en `api.vvalero.dev`.
+
+#### Paso 16 · Configurar el registro DNS
+
+En Vercel → `vvalero.dev` → DNS Records → añadir:
+
+| Tipo | Nombre | Valor |
+|---|---|---|
+| A | api | IP pública de la VM universitaria |
+
+#### Paso 17 · Preparar credenciales en la VM
 
 ```bash
-# Estado de los 3 sensores en Orion
-curl -s "http://localhost:1026/v2/entities?type=Sensor&options=keyValues" \
-  -H 'fiware-service: smarthome' | python3 -m json.tool
-
-# Alertas activas en este momento
-curl -s "http://localhost:5000/alerts" | python3 -m json.tool
-
-# Historial de accesos NFC
-curl -s "http://localhost:5000/access-log" | python3 -m json.tool
-
-# Estado del servidor de automatización
-curl -s "http://localhost:5000/health"
-
-# Parar el stack Docker
-./services stop
-
-# Reinicio completo (borra todos los datos)
-./services reset
+cp .env.example .env
+nano .env   # rellenar TTN_API_KEY y device IDs
 ```
+
+#### Paso 18 · Ejecutar el setup automático
+
+```bash
+bash scripts/setup_dmz.sh
+```
+
+El script verifica el DNS, obtiene el certificado TLS y arranca el stack completo.
+
+#### Paso 19 · Inicializar Fiware en el DMZ
+
+```bash
+bash fiware/ngsi/ngsi_crear_entidades.sh
+bash fiware/iot-agent/iot_agent_setup.sh
+bash fiware/subscriptions/ngsi_subscripciones.sh
+```
+
+#### Paso 20 · Actualizar el webhook en TTN
+
+Cambiar la Base URL del webhook a `https://api.vvalero.dev/iot/ul` (ver Paso 14).
 
 ---
 
 ## Conexión hardware
-
-### LEDs externos en protoboard (los 3 nodos)
-
-```
-LoPy4 P2 ──► R 220Ω ──► LED rojo  ──► GND
-LoPy4 P3 ──► R 220Ω ──► LED verde ──► GND
-LoPy4 P4 ──► R 220Ω ──► LED azul  ──► GND
-```
-
-### PN532 NFC (nodo dormitorio únicamente)
-
-Configura el módulo en modo I²C: interruptores DIP **SW1=OFF, SW2=ON**
-
-```
-PN532 SDA ──► LoPy4 P9
-PN532 SCL ──► LoPy4 P10
-PN532 VCC ──► 3.3V
-PN532 GND ──► GND
-```
 
 ---
 
@@ -367,7 +381,10 @@ PN532 GND ──► GND
 
 ## Protocolo de downlinks (Fiware → TTN → LoPy4)
 
-| Byte 0 | Comando | Bytes adicionales | Efecto en LED |
+El LED RGB integrado del LoPy4 actúa como actuador visible. Fiware envía
+downlinks que cambian su color según el evento detectado.
+
+| Byte 0 | Comando | Bytes adicionales | Efecto en LED integrado |
 |---|---|---|---|
 | 0x01 | Set LED color | R, G, B (0-255) | Color fijo |
 | 0x02 | Parpadear LED | R, G, B (0-255) | Parpadeo 3× |
@@ -398,41 +415,49 @@ PN532 GND ──► GND
 
 ```
 smart-home/
+├── .env.example                          # Plantilla variables de entorno (DMZ)
 ├── .gitignore
 ├── README.md
-├── services                              # Gestión Docker: start | stop | reset
+├── services                              # Gestión Docker local: start|stop|reset
+├── services_dmz                          # Gestión Docker DMZ:   start|stop|reset
 │
 ├── lopy4/
 │   ├── main.py                           # Bucle principal — soporta los 3 nodos
 │   ├── boot.py                           # Arranque del dispositivo
-│   ├── led.py                            # LED interno (estado) + LEDs protoboard
+│   ├── led.py                            # Control LED RGB integrado del LoPy4
 │   ├── nfc.py                            # Driver PN532 I²C (nodo dormitorio)
 │   ├── ble_scanner.py                    # Escáner BLE integrado (nodo exterior)
-│   ├── actuadores.py                     # Control relés GPIO (expansión futura)
 │   ├── credentials.example.py            # Plantilla — SÍ se sube a Git
 │   ├── credentials.py                    # Credenciales reales — NO se sube a Git
 │   ├── pymakr.conf                       # Configuración extensión Pymakr
 │   ├── ttn_payload_formatter.js          # Decoder/encoder Cayenne LPP para TTN
 │   └── lib/                              # Librerías oficiales Pycom para Pysense
 │       ├── CayenneLPP.py
-│       ├── SI7006A20.py
-│       ├── LTR329ALS01.py
-│       ├── MPL3115A2.py
-│       ├── LIS2HH12.py
-│       └── pysense.py / pycoproc.py
+│       ├── SI7006A20.py                  # Temp + Humedad
+│       ├── LTR329ALS01.py                # Luminosidad
+│       ├── MPL3115A2.py                  # Presión + Altitud
+│       ├── LIS2HH12.py                   # Acelerómetro 3 ejes
+│       └── pysense.py / pycoproc.py      # Placa de expansión Pysense
 │
 ├── fiware/
 │   ├── ngsi/ngsi_crear_entidades.sh      # Crea House, Rooms, Sensors, Alerts
-│   ├── iot-agent/iot_agent_setup.sh      # Registra servicios y dispositivos
+│   ├── iot-agent/iot_agent_setup.sh      # Registra los 3 nodos en IoT Agent
 │   └── subscriptions/ngsi_subscripciones.sh  # Crea las 8 suscripciones
 │
 ├── docker/
-│   ├── docker-compose.yml                # Orion + MongoDB + IoT Agent + Mosquitto
-│   └── mosquitto/mosquitto.conf
+│   ├── docker-compose.yml                # Stack local: Orion+MongoDB+IoTAgent+Mosquitto
+│   ├── docker-compose.dmz.yml            # Stack DMZ: añade Nginx+Certbot
+│   ├── Dockerfile.notification           # Imagen del notification server (DMZ)
+│   ├── mosquitto/mosquitto.conf
+│   └── nginx/
+│       ├── nginx.conf
+│       └── conf.d/smarthome.conf         # Proxy inverso → api.vvalero.dev
 │
 └── scripts/
-    ├── notification_server.py            # Servidor Flask: reglas + TTN downlinks
-    ├── arrancar_servidor.sh              # Gestiona venv y arranca el servidor
+    ├── notification_server.py            # Servidor Flask: 8 reglas + TTN downlinks
+    ├── arrancar_servidor.sh              # Gestiona venv y arranca el servidor (local)
+    ├── setup_dmz.sh                      # Instalación automática en el DMZ
+    ├── requirements.txt                  # Dependencias Python (Flask, requests)
     └── mqtt_simulator.py                 # Simulador de sensores sin hardware
 ```
 
@@ -452,10 +477,39 @@ AccessLog:N  ← una entidad nueva por cada lectura NFC (nfcUID, authorized, tim
 
 ---
 
+## Comandos de verificación y gestión
+
+```bash
+# Estado de los 3 sensores en Orion
+curl -s "http://localhost:1026/v2/entities?type=Sensor&options=keyValues" \
+  -H 'fiware-service: smarthome' | python3 -m json.tool
+
+# Alertas activas
+curl -s "http://localhost:5000/alerts" | python3 -m json.tool
+
+# Historial de accesos NFC
+curl -s "http://localhost:5000/access-log" | python3 -m json.tool
+
+# Estado del servidor
+curl -s "http://localhost:5000/health"
+
+# Parar el stack Docker
+./services stop
+
+# Reinicio completo (borra todos los datos)
+./services reset
+
+# Ver logs de un servicio concreto (DMZ)
+./services_dmz logs orion
+./services_dmz logs notification-server
+```
+
+---
+
 ## Solución de problemas frecuentes
 
 **Join OTAA no completa:**
-Verifica que en TTN Console el dispositivo está registrado como LoRaWAN 1.0.2 (no 1.0.3 ni 1.1). La AppKey debe coincidir byte a byte.
+Verifica que en TTN Console el dispositivo está registrado como LoRaWAN Specification 1.0.2 (no 1.0.3 ni 1.1). La AppKey debe coincidir byte a byte con la de `credentials.py`.
 
 **`Pool overlaps with other one on this address space`:**
 ```bash
@@ -463,10 +517,14 @@ docker network rm fiware_default && ./services start
 ```
 
 **`externally-managed-environment` al instalar pip:**
-Usa siempre `bash scripts/arrancar_servidor.sh` en lugar de pip directamente.
+Usa siempre `bash scripts/arrancar_servidor.sh` en lugar de pip directamente. El script gestiona el entorno virtual automáticamente.
 
-**Las suscripciones dan HTTP 400:**
-Ocurre si los atributos (temperature, humidity...) no existen aún en las entidades. El script corregido no usa filtros `expression` — si persiste el error comprueba que Orion está corriendo con `./services status`.
+**Suscripción [8] AccessLog da HTTP 400:**
+Normal al primer arranque — el tipo `AccessLog` no existe hasta el primer acceso NFC. Se crea automáticamente y no requiere intervención.
 
 **Presión baja dispara alerta incorrectamente:**
-En Albacete la presión normal es ~941 hPa por la altitud. Ajusta el umbral en `notification_server.py`: cambia `p >= 1000` por `p >= 950`.
+La presión normal en Albacete es ~941 hPa por la altitud (~700m). El umbral ya está corregido a 950 hPa en `notification_server.py`.
+
+
+**Downlinks TTN dan HTTP 400:**
+La `TTN_API_KEY` no está configurada en `notification_server.py`. Generarla en TTN Console → Applications → API keys con permiso `Write downlink application traffic`.

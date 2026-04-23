@@ -4,29 +4,26 @@
 #
 #   NODE_TYPE = 'salon'
 #     Sensores: temp, hum, lux, presión, acelerómetro
-#     LED externo controlado por downlink (color RGB)
 #
 #   NODE_TYPE = 'dormitorio'
 #     Sensores: temp, hum, lux, NFC (PN532)
-#     LED externo: verde=acceso OK, rojo=acceso denegado
 #
 #   NODE_TYPE = 'exterior'
 #     Sensores: temp, hum, presión, BLE scanner
-#     LED externo: alerta de aforo y luminosidad
 #
 # Payload Cayenne LPP por nodo:
 #   Salon:      CH1=temp CH2=hum CH3=lux CH4=pres CH5=accel CH6=room
 #   Dormitorio: CH1=temp CH2=hum CH3=lux CH4=nfc_uid CH5=room
 #   Exterior:   CH1=temp CH2=hum CH3=pres CH4=ble_count CH5=room
 #
-# Downlink (desde Fiware via TTN):
+# Downlink (desde Fiware via TTN) — controla el LED RGB integrado:
 #   Byte 0: comando
-#     0x01 = set LED RGB  (bytes 1=R 2=G 3=B)
-#     0x02 = parpadear LED RGB
+#     0x01 = set color RGB    (bytes 1=R 2=G 3=B)
+#     0x02 = parpadear RGB    (bytes 1=R 2=G 3=B)
 #     0x03 = acceso NFC concedido  (LED verde)
 #     0x04 = acceso NFC denegado   (LED rojo)
 #     0x05 = alerta aforo BLE      (LED amarillo)
-#     0x06 = alerta temperatura    (byte 1: 0=frio 1=calor)
+#     0x06 = alerta temperatura    (byte 1: 0=frio→azul, 1=calor→naranja)
 #     0x07 = alerta exterior       (LED blanco)
 # ============================================================
 
@@ -44,7 +41,7 @@ from LIS2HH12 import LIS2HH12
 from led import (sistema_arrancando, sistema_join_espera, sistema_conectado,
                  sistema_transmitiendo, sistema_error, sistema_downlink_recibido,
                  led_desde_bytes, led_rojo, led_verde, led_azul, led_amarillo,
-                 led_naranja, led_blanco, led_magenta, leds_apagar, parpadear)
+                 led_naranja, led_blanco, led_magenta, parpadear)
 
 # ============================================================
 # CREDENCIALES Y CONFIGURACION
@@ -160,12 +157,10 @@ def _leer_salon():
     print('  T={:.1f}C H={:.1f}% Lux={} P={:.1f}hPa Acc=({:.2f},{:.2f},{:.2f})g'.format(
         temp, hum, lux, pres, ax, ay, az))
 
-    # Alerta local vibración > 1.5g
     magnitud = (ax**2 + ay**2 + az**2) ** 0.5
     if magnitud > 1.5:
         print('  ALERTA vibracion: {:.2f}g'.format(magnitud))
         parpadear(led_magenta, veces=2)
-        sistema_conectado()
 
     lpp = CayenneLPP()
     lpp.add_temperature(1, temp)
@@ -174,7 +169,7 @@ def _leer_salon():
     lpp.add_barometric_pressure(4, pres)
     lpp.add_accelerometer(5, ax, ay, az)
     lpp.add_digital_input(6, ROOM_ID['salon'])
-    return bytes(lpp.get_buffer()), None
+    return bytes(lpp.get_buffer())
 
 
 def _leer_dormitorio():
@@ -200,7 +195,7 @@ def _leer_dormitorio():
     lpp.add_luminosity(3, lux)
     lpp.add_analog_input(4, uid_analog)
     lpp.add_digital_input(5, ROOM_ID['dormitorio'])
-    return bytes(lpp.get_buffer()), uid_str
+    return bytes(lpp.get_buffer())
 
 
 def _leer_exterior():
@@ -215,11 +210,9 @@ def _leer_exterior():
     print('  T={:.1f}C H={:.1f}% P={:.1f}hPa BLE={}'.format(
         temp, hum, pres, n_cercanos))
 
-    # Alerta local luminosidad baja exterior
     if lux < 50:
         print('  Luminosidad baja exterior ({} lux)'.format(lux))
         parpadear(led_blanco, veces=1)
-        sistema_conectado()
 
     lpp = CayenneLPP()
     lpp.add_temperature(1, temp)
@@ -227,7 +220,7 @@ def _leer_exterior():
     lpp.add_barometric_pressure(3, pres)
     lpp.add_digital_input(4, min(n_cercanos, 255))
     lpp.add_digital_input(5, ROOM_ID['exterior'])
-    return bytes(lpp.get_buffer()), None
+    return bytes(lpp.get_buffer())
 
 
 # ============================================================
@@ -246,13 +239,10 @@ def _procesar_downlink(data):
         def _c():
             led_desde_bytes(data[1], data[2], data[3])
         parpadear(_c, veces=3)
-        sistema_conectado()
     elif cmd == 0x03:
         parpadear(led_verde, veces=2, intervalo=0.4)
-        led_verde()
     elif cmd == 0x04:
         parpadear(led_rojo, veces=3, intervalo=0.2)
-        leds_apagar()
     elif cmd == 0x05:
         parpadear(led_amarillo, veces=4, intervalo=0.2)
         led_amarillo()
@@ -265,7 +255,6 @@ def _procesar_downlink(data):
             led_naranja()
     elif cmd == 0x07:
         parpadear(led_blanco, veces=2)
-        led_blanco()
     else:
         print('  Downlink desconocido: 0x{:02X}'.format(cmd))
 
@@ -280,11 +269,11 @@ while True:
 
     try:
         if NODE_TYPE == 'salon':
-            payload, extra = _leer_salon()
+            payload = _leer_salon()
         elif NODE_TYPE == 'dormitorio':
-            payload, extra = _leer_dormitorio()
+            payload = _leer_dormitorio()
         elif NODE_TYPE == 'exterior':
-            payload, extra = _leer_exterior()
+            payload = _leer_exterior()
     except Exception as e:
         print('  Error sensores: {}'.format(e))
         sistema_error()

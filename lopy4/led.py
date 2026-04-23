@@ -1,54 +1,49 @@
-# led.py — Control de LEDs externos en protoboard
+# led.py — Control del LED RGB integrado en el LoPy4
 # ============================================================
-# LEDs individuales conectados a pines GPIO del LoPy4:
-#   PIN_LED_R → LED rojo   (con resistencia 220Ω a GND)
-#   PIN_LED_G → LED verde  (con resistencia 220Ω a GND)
-#   PIN_LED_B → LED azul   (con resistencia 220Ω a GND)
+# El LoPy4 tiene un LED RGB integrado controlado con pycom.rgbled()
+# Se usa para indicar tanto el estado del sistema como
+# los eventos recibidos por downlink desde Fiware.
 #
-# El LED RGB interno del LoPy4 se usa para estado del sistema.
-# Los LEDs externos en protoboard se usan para señalización
-# de eventos recibidos por downlink desde Fiware.
+# Colores de estado del sistema (LED tenue para no molestar):
+#   Azul tenue    → arrancando
+#   Rojo parpadeante → esperando join OTAA
+#   Verde tenue   → conectado, en espera
+#   Blanco destello → transmitiendo uplink
+#   Rojo fijo     → error crítico
+#   Cian destello → downlink recibido
 #
-# Conexión física:
-#   LoPy4 P2 → R 220Ω → LED rojo   → GND
-#   LoPy4 P3 → R 220Ω → LED verde  → GND
-#   LoPy4 P4 → R 220Ω → LED azul   → GND
+# Colores de eventos (LED más brillante):
+#   Naranja       → alerta temperatura alta
+#   Azul cian     → alerta temperatura baja
+#   Magenta       → vibración detectada
+#   Amarillo      → alerta aforo BLE
+#   Verde         → acceso NFC concedido
+#   Rojo          → acceso NFC denegado
+#   Blanco        → alerta luminosidad exterior
 # ============================================================
 
 import pycom
-from machine import Pin, PWM
 import time
-
-# ---- Pines LEDs externos ----
-PIN_LED_R = 'P2'
-PIN_LED_G = 'P3'
-PIN_LED_B = 'P4'
-
-# Inicializar pines como salida digital
-_pin_r = Pin(PIN_LED_R, mode=Pin.OUT, value=0)
-_pin_g = Pin(PIN_LED_G, mode=Pin.OUT, value=0)
-_pin_b = Pin(PIN_LED_B, mode=Pin.OUT, value=0)
-
-# Estado actual
-_estado_externo = {'r': 0, 'g': 0, 'b': 0}
 
 
 # ============================================================
-# LED INTERNO (RGB integrado en LoPy4)
-# Usado exclusivamente para estado del sistema
+# ESTADO DEL SISTEMA (colores tenues)
 # ============================================================
 
 def sistema_arrancando():
-    """Azul: dispositivo iniciando."""
+    """Azul tenue: dispositivo iniciando."""
     pycom.rgbled(0x000010)
 
+
 def sistema_join_espera():
-    """Rojo parpadeante: esperando join OTAA."""
+    """Rojo tenue: esperando join OTAA."""
     pycom.rgbled(0x100000)
+
 
 def sistema_conectado():
     """Verde tenue: conectado y en espera."""
     pycom.rgbled(0x001000)
+
 
 def sistema_transmitiendo():
     """Blanco destello: enviando uplink."""
@@ -56,9 +51,11 @@ def sistema_transmitiendo():
     time.sleep(0.1)
     pycom.rgbled(0x001000)
 
+
 def sistema_error():
     """Rojo fijo: error crítico."""
     pycom.rgbled(0xFF0000)
+
 
 def sistema_downlink_recibido():
     """Cian destello: downlink procesado."""
@@ -68,85 +65,72 @@ def sistema_downlink_recibido():
 
 
 # ============================================================
-# LEDs EXTERNOS (protoboard)
-# Controlados por downlink desde Fiware
+# EVENTOS (colores más brillantes, controlados por downlink)
 # ============================================================
 
-def _set_leds(r, g, b):
-    """Establece el estado de los tres LEDs externos."""
-    _estado_externo['r'] = 1 if r else 0
-    _estado_externo['g'] = 1 if g else 0
-    _estado_externo['b'] = 1 if b else 0
-    _pin_r.value(_estado_externo['r'])
-    _pin_g.value(_estado_externo['g'])
-    _pin_b.value(_estado_externo['b'])
-
-
-def leds_apagar():
-    """Apaga todos los LEDs externos."""
-    _set_leds(0, 0, 0)
+def led_apagar():
+    """Apaga el LED."""
+    pycom.rgbled(0x000000)
 
 
 def led_rojo():
-    """LED rojo: acceso denegado / alerta crítica."""
-    _set_leds(1, 0, 0)
+    """Rojo: acceso NFC denegado / alerta crítica."""
+    pycom.rgbled(0xFF0000)
 
 
 def led_verde():
-    """LED verde: acceso concedido / estado OK."""
-    _set_leds(0, 1, 0)
+    """Verde: acceso NFC concedido."""
+    pycom.rgbled(0x00FF00)
 
 
 def led_azul():
-    """LED azul: alerta frío / información."""
-    _set_leds(0, 0, 1)
+    """Azul: alerta temperatura baja."""
+    pycom.rgbled(0x0000FF)
 
 
 def led_amarillo():
-    """LED amarillo (R+G): alerta aforo / aviso."""
-    _set_leds(1, 1, 0)
+    """Amarillo: alerta aforo BLE."""
+    pycom.rgbled(0xFFFF00)
 
 
 def led_naranja():
-    """LED naranja (R fuerte + G tenue): alerta calor."""
-    _pin_r.value(1)
-    _pin_g.value(1)   # ambos encendidos = naranja aproximado
-    _pin_b.value(0)
-    _estado_externo.update({'r': 1, 'g': 1, 'b': 0})
+    """Naranja: alerta temperatura alta."""
+    pycom.rgbled(0xFF4400)
 
 
 def led_magenta():
-    """LED magenta (R+B): alerta vibración."""
-    _set_leds(1, 0, 1)
+    """Magenta: vibración detectada."""
+    pycom.rgbled(0xFF00FF)
 
 
 def led_blanco():
-    """LED blanco (R+G+B): alerta luminosidad exterior."""
-    _set_leds(1, 1, 1)
+    """Blanco: alerta luminosidad exterior."""
+    pycom.rgbled(0xFFFFFF)
 
 
 def led_desde_bytes(r, g, b):
     """
-    Establece LEDs desde bytes de downlink (0-255 → umbral 128).
+    Establece el color del LED desde bytes de downlink.
     r, g, b: valores 0-255 recibidos del servidor.
     """
-    _set_leds(r > 127, g > 127, b > 127)
-    print('[LED] Externo R={} G={} B={}'.format(
-        _estado_externo['r'], _estado_externo['g'], _estado_externo['b']))
+    color = (r << 16) | (g << 8) | b
+    pycom.rgbled(color)
+    print('[LED] Color RGB: #{:06X}'.format(color))
 
 
 def parpadear(funcion_color, veces=3, intervalo=0.3):
     """
-    Hace parpadear un color N veces.
+    Hace parpadear un color N veces y vuelve a verde (conectado).
     funcion_color: una de las funciones led_* de este módulo.
     """
     for _ in range(veces):
         funcion_color()
         time.sleep(intervalo)
-        leds_apagar()
+        led_apagar()
         time.sleep(intervalo)
+    sistema_conectado()
 
 
-def obtener_estado():
-    """Retorna el estado actual de los LEDs externos."""
-    return dict(_estado_externo)
+def obtener_color_actual():
+    """Retorna el color actual del LED como entero RGB."""
+    return pycom.rgbled()
