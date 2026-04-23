@@ -1,34 +1,29 @@
 #!/bin/bash
-# iot_agent_setup.sh
-# Registra servicios y dispositivos en el IoT Agent UltraLight 2.0 con MQTT
+# iot_agent_setup.sh — Registra servicios y dispositivos en el IoT Agent
+# Casa Inteligente IoT · 3x LoPy4 + Pysense
 #
-# Orden de ejecución:
-#   1. Crear servicio de sensores
-#   2. Registrar los 5 sensores
-#   3. Crear servicio de actuadores (lámparas)
-#   4. Registrar las 5 lámparas
-#   5. Crear servicio de actuadores (AC)
-#   6. Registrar los 5 AC
-#   7. Crear servicio de alarma
-#   8. Registrar la alarma
+# Registra únicamente los 3 nodos reales del proyecto:
+#   s1 → Nodo salón      (temp, hum, lux, presión, acelerómetro)
+#   s2 → Nodo dormitorio (temp, hum, lux, NFC)
+#   s3 → Nodo exterior   (temp, hum, presión, BLE)
 #
-# Prerequisito: entidades NGSI-v2 ya creadas (ngsi_crear_entidades.sh)
+# Prerequisito: ngsi_crear_entidades.sh ya ejecutado
 
 IOT_AGENT="http://localhost:4041"
-ORION="http://orion:1026"   # URL interna Docker
-FS_SENSOR='-H "fiware-service: smarthome" -H "fiware-servicepath: /"'
+ORION="http://orion:1026"
 
 echo "=================================================="
 echo " Configurando IoT Agent - Casa Inteligente IoT"
 echo "=================================================="
 
-# ===========================================================
-# SENSORES
-# ===========================================================
-
+# -------------------------------------------------------
+# Servicio de sensores
+# Define los atributos que el IoT Agent mapeará a Orion
+# cuando lleguen datos por MQTT desde TTN
+# -------------------------------------------------------
 echo ""
 echo "--- [A] Servicio de Sensores ---"
-curl -s -o /dev/null -w "Servicio Sensor → HTTP %{http_code}\n" -iX POST "$IOT_AGENT/iot/services" \
+curl -s -o /dev/null -w "Servicio Sensor → HTTP %{http_code}\n" -X POST "$IOT_AGENT/iot/services" \
   -H 'Content-Type: application/json' \
   -H 'fiware-service: smarthome' \
   -H 'fiware-servicepath: /' \
@@ -42,158 +37,60 @@ curl -s -o /dev/null -w "Servicio Sensor → HTTP %{http_code}\n" -iX POST "$IOT
       \"transport\":   \"MQTT\",
       \"timezone\":    \"Europe/Madrid\",
       \"attributes\": [
-        {
-          \"object_id\": \"t\", \"name\": \"temperature\", \"type\": \"Number\",
-          \"metadata\": { \"unitCode\": { \"type\": \"Text\", \"value\": \"CEL\" } }
-        },
-        {
-          \"object_id\": \"h\", \"name\": \"humidity\", \"type\": \"Number\",
-          \"metadata\": { \"unitCode\": { \"type\": \"Text\", \"value\": \"P1\" } }
-        },
-        {
-          \"object_id\": \"l\", \"name\": \"luminosity\", \"type\": \"Number\",
-          \"metadata\": { \"unitCode\": { \"type\": \"Text\", \"value\": \"P1\" } }
-        },
-        {
-          \"object_id\": \"p\", \"name\": \"presence\", \"type\": \"Integer\"
-        }
+        { \"object_id\": \"temperature\",           \"name\": \"temperature\",           \"type\": \"Number\" },
+        { \"object_id\": \"humidity\",              \"name\": \"humidity\",              \"type\": \"Number\" },
+        { \"object_id\": \"luminosity\",            \"name\": \"luminosity\",            \"type\": \"Number\" },
+        { \"object_id\": \"barometricPressure\",    \"name\": \"barometricPressure\",    \"type\": \"Number\" },
+        { \"object_id\": \"vibrationDetected\",     \"name\": \"vibrationDetected\",     \"type\": \"Boolean\" },
+        { \"object_id\": \"accelerationMagnitude\", \"name\": \"accelerationMagnitude\", \"type\": \"Number\" },
+        { \"object_id\": \"nfcDetected\",           \"name\": \"nfcDetected\",           \"type\": \"Boolean\" },
+        { \"object_id\": \"nfcUidPartial\",         \"name\": \"nfcUidPartial\",         \"type\": \"Number\" },
+        { \"object_id\": \"bleDevicesNearby\",      \"name\": \"bleDevicesNearby\",      \"type\": \"Number\" },
+        { \"object_id\": \"room\",                  \"name\": \"room\",                  \"type\": \"Text\" },
+        { \"object_id\": \"roomId\",                \"name\": \"roomId\",                \"type\": \"Number\" }
       ]
     }]
   }"
 
+# -------------------------------------------------------
+# Registrar los 3 dispositivos (uno por nodo)
+# -------------------------------------------------------
 echo ""
-echo "--- [B] Registrando 5 Sensores ---"
-for i in 1 2 3 4 5; do
-  curl -s -o /dev/null -w "Sensor s$i → HTTP %{http_code}\n" -iX POST "$IOT_AGENT/iot/devices" \
-    -H 'Content-Type: application/json' \
-    -H 'fiware-service: smarthome' \
-    -H 'fiware-servicepath: /' \
-    -d "{
-      \"devices\": [{
-        \"device_id\":   \"s$i\",
-        \"entity_type\": \"Sensor\"
-      }]
-    }"
-done
+echo "--- [B] Registrando 3 nodos ---"
 
-# ===========================================================
-# LÁMPARAS (actuadores)
-# ===========================================================
-
-echo ""
-echo "--- [C] Servicio de Lámparas ---"
-curl -s -o /dev/null -w "Servicio Lamp → HTTP %{http_code}\n" -iX POST "$IOT_AGENT/iot/services" \
-  -H 'Content-Type: application/json' \
-  -H 'fiware-service: smarthome' \
-  -H 'fiware-servicepath: /' \
-  -d "{
-    \"services\": [{
-      \"apikey\":      \"smarthome-lamp-key\",
-      \"cbroker\":     \"$ORION\",
-      \"entity_type\": \"Lamp\",
-      \"resource\":    \"\",
-      \"protocol\":    \"PDI-IoTA-UltraLight\",
-      \"transport\":   \"MQTT\",
-      \"timezone\":    \"Europe/Madrid\",
-      \"commands\": [
-        { \"name\": \"onOff\",     \"type\": \"command\" },
-        { \"name\": \"nivelLuz\",  \"type\": \"command\" }
-      ]
-    }]
-  }"
-
-echo ""
-echo "--- [D] Registrando 5 Lámparas ---"
-for i in 1 2 3 4 5; do
-  curl -s -o /dev/null -w "Lamp lamp$i → HTTP %{http_code}\n" -iX POST "$IOT_AGENT/iot/devices" \
-    -H 'Content-Type: application/json' \
-    -H 'fiware-service: smarthome' \
-    -H 'fiware-servicepath: /' \
-    -d "{
-      \"devices\": [{
-        \"device_id\":   \"lamp$i\",
-        \"entity_type\": \"Lamp\"
-      }]
-    }"
-done
-
-# ===========================================================
-# AIRES ACONDICIONADOS (actuadores)
-# ===========================================================
-
-echo ""
-echo "--- [E] Servicio de AC ---"
-curl -s -o /dev/null -w "Servicio AC → HTTP %{http_code}\n" -iX POST "$IOT_AGENT/iot/services" \
-  -H 'Content-Type: application/json' \
-  -H 'fiware-service: smarthome' \
-  -H 'fiware-servicepath: /' \
-  -d "{
-    \"services\": [{
-      \"apikey\":      \"smarthome-ac-key\",
-      \"cbroker\":     \"$ORION\",
-      \"entity_type\": \"AC\",
-      \"resource\":    \"\",
-      \"protocol\":    \"PDI-IoTA-UltraLight\",
-      \"transport\":   \"MQTT\",
-      \"timezone\":    \"Europe/Madrid\",
-      \"commands\": [
-        { \"name\": \"onOff\",    \"type\": \"command\" },
-        { \"name\": \"heatCool\", \"type\": \"command\" }
-      ]
-    }]
-  }"
-
-echo ""
-echo "--- [F] Registrando 5 AC ---"
-for i in 1 2 3 4 5; do
-  curl -s -o /dev/null -w "AC ac$i → HTTP %{http_code}\n" -iX POST "$IOT_AGENT/iot/devices" \
-    -H 'Content-Type: application/json' \
-    -H 'fiware-service: smarthome' \
-    -H 'fiware-servicepath: /' \
-    -d "{
-      \"devices\": [{
-        \"device_id\":   \"ac$i\",
-        \"entity_type\": \"AC\"
-      }]
-    }"
-done
-
-# ===========================================================
-# ALARMA (actuador)
-# ===========================================================
-
-echo ""
-echo "--- [G] Servicio de Alarma ---"
-curl -s -o /dev/null -w "Servicio Alarm → HTTP %{http_code}\n" -iX POST "$IOT_AGENT/iot/services" \
-  -H 'Content-Type: application/json' \
-  -H 'fiware-service: smarthome' \
-  -H 'fiware-servicepath: /' \
-  -d "{
-    \"services\": [{
-      \"apikey\":      \"smarthome-alarm-key\",
-      \"cbroker\":     \"$ORION\",
-      \"entity_type\": \"Alarm\",
-      \"resource\":    \"\",
-      \"protocol\":    \"PDI-IoTA-UltraLight\",
-      \"transport\":   \"MQTT\",
-      \"timezone\":    \"Europe/Madrid\",
-      \"commands\": [
-        { \"name\": \"activar\",  \"type\": \"command\" },
-        { \"name\": \"silenciar\",\"type\": \"command\" }
-      ]
-    }]
-  }"
-
-echo ""
-echo "--- [H] Registrando Alarma ---"
-curl -s -o /dev/null -w "Alarm alarm001 → HTTP %{http_code}\n" -iX POST "$IOT_AGENT/iot/devices" \
+curl -s -o /dev/null -w "Nodo salon (s1)      → HTTP %{http_code}\n" -X POST "$IOT_AGENT/iot/devices" \
   -H 'Content-Type: application/json' \
   -H 'fiware-service: smarthome' \
   -H 'fiware-servicepath: /' \
   -d '{
     "devices": [{
-      "device_id":   "alarm001",
-      "entity_type": "Alarm"
+      "device_id":   "s1",
+      "entity_name": "Sensor:s1",
+      "entity_type": "Sensor"
+    }]
+  }'
+
+curl -s -o /dev/null -w "Nodo dormitorio (s2) → HTTP %{http_code}\n" -X POST "$IOT_AGENT/iot/devices" \
+  -H 'Content-Type: application/json' \
+  -H 'fiware-service: smarthome' \
+  -H 'fiware-servicepath: /' \
+  -d '{
+    "devices": [{
+      "device_id":   "s2",
+      "entity_name": "Sensor:s2",
+      "entity_type": "Sensor"
+    }]
+  }'
+
+curl -s -o /dev/null -w "Nodo exterior (s3)   → HTTP %{http_code}\n" -X POST "$IOT_AGENT/iot/devices" \
+  -H 'Content-Type: application/json' \
+  -H 'fiware-service: smarthome' \
+  -H 'fiware-servicepath: /' \
+  -d '{
+    "devices": [{
+      "device_id":   "s3",
+      "entity_name": "Sensor:s3",
+      "entity_type": "Sensor"
     }]
   }'
 
@@ -203,7 +100,11 @@ echo ""
 echo "Verificando dispositivos registrados:"
 curl -s "$IOT_AGENT/iot/devices" \
   -H 'fiware-service: smarthome' \
-  -H 'fiware-servicepath: /' | python3 -m json.tool 2>/dev/null || \
-curl -s "$IOT_AGENT/iot/devices" \
-  -H 'fiware-service: smarthome' \
-  -H 'fiware-servicepath: /'
+  -H 'fiware-servicepath: /' \
+  | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+print('  Total dispositivos:', data.get('count', 0))
+for d in data.get('devices', []):
+    print('  ', d['device_id'], '→', d['entity_name'])
+" 2>/dev/null

@@ -1,0 +1,73 @@
+#!/bin/bash
+# services_dmz — Gestión del stack Docker en el DMZ
+# Dominio: api.vvalero.dev
+# Uso: ./services_dmz start | stop | status | reset | renew-cert | logs | rebuild
+
+COMPOSE="docker compose -f docker/docker-compose_dmz.yml"
+
+case "$1" in
+
+  start)
+    echo "Iniciando Casa Inteligente IoT (DMZ)..."
+    $COMPOSE up -d
+    sleep 20
+    echo ""
+    echo "Estado:"
+    $COMPOSE ps
+    echo ""
+    echo -n "  https://api.vvalero.dev/health → "
+    curl -s -o /dev/null -w "HTTP %{http_code}\n" https://api.vvalero.dev/health 2>/dev/null \
+        || echo "No disponible"
+    ;;
+
+  stop)
+    echo "Deteniendo servicios..."
+    $COMPOSE down
+    ;;
+
+  status)
+    $COMPOSE ps
+    echo ""
+    echo -n "  https://api.vvalero.dev/health → "
+    curl -s -o /dev/null -w "HTTP %{http_code}\n" https://api.vvalero.dev/health 2>/dev/null \
+        || echo "No disponible"
+    ;;
+
+  reset)
+    echo "AVISO: Eliminando todos los contenedores y volúmenes..."
+    read -p "¿Confirmar? (s/N): " CONF
+    [[ "$CONF" != "s" && "$CONF" != "S" ]] && exit 0
+    $COMPOSE down -v
+    echo "Reset completado. Ejecuta './services_dmz start' para reiniciar."
+    ;;
+
+  renew-cert)
+    echo "Renovando certificado TLS para api.vvalero.dev..."
+    $COMPOSE run --rm certbot renew
+    $COMPOSE exec nginx nginx -s reload
+    echo "Certificado renovado y Nginx recargado."
+    ;;
+
+  logs)
+    SERVICE=${2:-""}
+    if [ -z "$SERVICE" ]; then
+        $COMPOSE logs -f --tail=50
+    else
+        $COMPOSE logs -f --tail=100 $SERVICE
+    fi
+    ;;
+
+  rebuild)
+    echo "Reconstruyendo imagen del notification server..."
+    $COMPOSE build notification-server
+    $COMPOSE up -d notification-server
+    ;;
+
+  *)
+    echo "Uso: $0 {start|stop|status|reset|renew-cert|logs [servicio]|rebuild}"
+    echo ""
+    echo "Servicios para logs:"
+    echo "  nginx | orion | iot-agent | mosquitto | notification-server | mongo-db"
+    exit 1
+    ;;
+esac

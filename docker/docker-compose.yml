@@ -1,22 +1,11 @@
 # docker-compose.yml — Casa Inteligente IoT con Fiware
-#
-# Servicios desplegados:
-#   - orion        : Context Broker NGSI-v2 (puerto 1026)
-#   - mongo-db     : Base de datos para Orion e IoT Agent (puerto 27017)
-#   - iot-agent    : IoT Agent UltraLight 2.0 (puerto 4041)
-#   - mosquitto    : Broker MQTT (puertos 1883 y 9001)
-#
-# Uso:
+# Uso local (WSL2):
 #   Arrancar:  ./services start
 #   Parar:     ./services stop
-
-version: "3.8"
+#   Reset:     ./services reset
 
 services:
 
-  # -------------------------------------------------------
-  # Orion Context Broker
-  # -------------------------------------------------------
   orion:
     image: fiware/orion:3.10.1
     hostname: orion
@@ -35,9 +24,6 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # -------------------------------------------------------
-  # MongoDB
-  # -------------------------------------------------------
   mongo-db:
     image: mongo:6.0
     hostname: mongo-db
@@ -54,9 +40,6 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # -------------------------------------------------------
-  # IoT Agent UltraLight 2.0
-  # -------------------------------------------------------
   iot-agent:
     image: quay.io/fiware/iotagent-ul:latest
     hostname: iot-agent
@@ -97,9 +80,6 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # -------------------------------------------------------
-  # Mosquitto MQTT Broker
-  # -------------------------------------------------------
   mosquitto:
     image: eclipse-mosquitto:2.0
     hostname: mosquitto
@@ -107,12 +87,11 @@ services:
     networks:
       - smarthome-net
     ports:
-      - "1883:1883"    # MQTT estándar
-      - "9001:9001"    # WebSockets
+      - "1883:1883"
+      - "9001:9001"
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
     restart: unless-stopped
-
 
 networks:
   smarthome-net:

@@ -1,0 +1,27 @@
+# Dockerfile.notification — Contenedor para el servidor de automatización
+# Se usa en el despliegue DMZ donde el servidor corre dentro de Docker
+# (en local/WSL2 corre directamente en el host con arrancar_servidor.sh)
+
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Instalar dependencias
+COPY scripts/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiar el servidor
+COPY scripts/notification_server.py .
+
+# Puerto interno del servidor Flask
+EXPOSE 5000
+
+# Variables de entorno con valores por defecto (sobreescritas por .env)
+ENV ORION_URL=http://orion:1026
+ENV TTN_APP_ID=casa-inteligente-iot
+ENV TTN_API_KEY=NNSXS.XXXXXXXXXX
+ENV SENSOR_S1_DEVICE=lopy4-salon
+ENV SENSOR_S2_DEVICE=lopy4-dormitorio
+ENV SENSOR_S3_DEVICE=lopy4-exterior
+
+CMD ["python3", "notification_server.py"]

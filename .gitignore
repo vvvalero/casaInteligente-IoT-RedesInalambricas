@@ -1,12 +1,3 @@
-# ============================================================
-# .gitignore — Casa Inteligente IoT
-# ============================================================
-
-
-# ============================================================
-# CREDENCIALES Y SECRETOS — nunca subir a GitHub
-# ============================================================
-
 # Credenciales TTN de cada LoPy4 (APP_EUI, APP_KEY, DEVICE_ROOM)
 lopy4/credentials.py
 
@@ -142,3 +133,8 @@ tmp/
 node_modules/
 npm-debug.log*
 package-lock.json
+
+
+.env
+docker/certbot-certs/
+docker/certbot-www/
