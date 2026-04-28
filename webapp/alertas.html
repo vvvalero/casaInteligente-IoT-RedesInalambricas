@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alertas | Smart Home</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <h2>🏠 Smart Home</h2>
+            <nav>
+                <a href="index.html">Dashboard</a>
+                <a href="accesos.html">Accesos NFC</a>
+                <a href="alertas.html" class="active">Alertas</a>
+                <a href="estado.html">Estado del Sistema</a>
+            </nav>
+        </aside>
+        
+        <main class="content">
+            <header>
+                <h1>Registro de Alertas</h1>
+            </header>
+
+            <section class="card">
+                <h3>Alertas Activas</h3>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Sensor</th>
+                            <th>Mensaje</th>
+                            <th>Gravedad</th>
+                        </tr>
+                    </thead>
+                    <tbody id="alertas-list">
+                        <tr><td colspan="4">Cargando...</td></tr>
+                    </tbody>
+                </table>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchAlertas();
+            setInterval(fetchAlertas, 30000);
+        });
+    </script>
+</body>
+</html>

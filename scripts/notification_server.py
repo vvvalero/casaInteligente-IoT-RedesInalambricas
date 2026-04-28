@@ -8,10 +8,12 @@
 # Las variables de entorno tienen prioridad sobre los valores hardcodeados.
 
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import requests, json, logging, base64, time, os
 from datetime import datetime, timezone
 
 app = Flask(__name__)
+CORS(app)
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s [%(levelname)s] %(message)s')
 
@@ -263,17 +265,115 @@ def alerts():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/access-log", methods=["GET"])
-def access_log():
+@app.route("/api/alertas", methods=["GET"])
+def api_alertas():
+    try:
+        r = requests.get(
+            f"{ORION}/v2/entities?type=Alert&options=keyValues&limit=100",
+            headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
+            timeout=5)
+        # Ordenar por timestamp desc (más recientes primero)
+        data = r.json()
+        data.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        return jsonify(data), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/access-log", methods=["GET"])
+def api_access_log():
     try:
         r = requests.get(
             f"{ORION}/v2/entities?type=AccessLog&options=keyValues&limit=50",
+            headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
+            timeout=5)
+        data = r.json()
+        # sort by timestamp desc
+        data.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        return jsonify(data), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/nodos", methods=["GET"])
+def api_nodos():
+    try:
+        r = requests.get(
+            f"{ORION}/v2/entities?type=Sensor&options=keyValues",
             headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
             timeout=5)
         return jsonify(r.json()), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/status", methods=["GET"])
+def api_status():
+    return jsonify({
+        "server":    "running",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "orion":     ORION,
+        "ttn_app":   TTN_APP_ID,
+        "ttn_ready": "XXXXXXXXXX" not in TTN_API_KEY
+    }), 200
+
+@app.route("/api/nfc/uids", methods=["GET"])
+def api_get_uids():
+    try:
+        r = requests.get(
+            f"{ORION}/v2/entities/Sensor:s2/attrs/nfcAuthorizedUIDs/value",
+            headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
+            timeout=5)
+        if r.status_code == 200:
+            uids = r.text.strip().strip('"').split(',')
+            uids = [u for u in uids if u]
+            return jsonify(uids), 200
+        return jsonify(list(NFC_AUTHORIZED)), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/nfc/uids", methods=["POST"])
+def api_add_uid():
+    data = request.get_json(silent=True) or {}
+    uid = data.get("uid", "").strip().upper()
+    if not uid:
+        return jsonify({"error": "UID is required"}), 400
+    try:
+        r = requests.get(
+            f"{ORION}/v2/entities/Sensor:s2/attrs/nfcAuthorizedUIDs/value",
+            headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
+            timeout=3)
+        uids = set(r.text.strip().strip('"').split(',')) if r.status_code == 200 else set(NFC_AUTHORIZED)
+        uids.add(uid)
+        _patch("Sensor:s2", {"nfcAuthorizedUIDs": {"type": "Text", "value": ",".join(uids)}})
+        return jsonify({"status": "ok", "uids": list(uids)}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/nfc/uids/<uid>", methods=["DELETE"])
+def api_delete_uid(uid):
+    uid = uid.strip().upper()
+    try:
+        r = requests.get(
+            f"{ORION}/v2/entities/Sensor:s2/attrs/nfcAuthorizedUIDs/value",
+            headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
+            timeout=3)
+        uids = set(r.text.strip().strip('"').split(',')) if r.status_code == 200 else set(NFC_AUTHORIZED)
+        if uid in uids:
+            uids.remove(uid)
+        _patch("Sensor:s2", {"nfcAuthorizedUIDs": {"type": "Text", "value": ",".join(uids)}})
+        return jsonify({"status": "ok", "uids": list(uids)}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/led/<nodo>", methods=["POST"])
+def api_led(nodo):
+    data = request.get_json(silent=True) or {}
+    r = data.get("r", 0)
+    g = data.get("g", 0)
+    b = data.get("b", 0)
+    # Payload format: [0x02, r, g, b] (por ejemplo, para enviar color)
+    _downlink(f"Sensor:{nodo}", [0x02, r, g, b])
+    return jsonify({"status": "ok"}), 200
 
 if __name__ == "__main__":
     logging.info("Servidor iniciando en puerto 5000...")

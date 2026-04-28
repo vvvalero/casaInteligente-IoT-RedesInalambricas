@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Estado | Smart Home</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <h2>🏠 Smart Home</h2>
+            <nav>
+                <a href="index.html">Dashboard</a>
+                <a href="accesos.html">Accesos NFC</a>
+                <a href="alertas.html">Alertas</a>
+                <a href="estado.html" class="active">Estado del Sistema</a>
+            </nav>
+        </aside>
+        
+        <main class="content">
+            <header>
+                <h1>System Status</h1>
+            </header>
+
+            <section class="card" id="status-card">
+                <h3>Conexión</h3>
+                <div class="status-grid">
+                    <div>
+                        <span class="label">Backend API</span>
+                        <span class="value badge good" id="api-status">Cargando...</span>
+                    </div>
+                    <div>
+                        <span class="label">Orion CB</span>
+                        <span class="value" id="orion-url">--</span>
+                    </div>
+                    <div>
+                        <span class="label">TTN App ID</span>
+                        <span class="value" id="ttn-app">--</span>
+                    </div>
+                    <div>
+                        <span class="label">TTN API Key</span>
+                        <span class="value badge" id="ttn-key-status">--</span>
+                    </div>
+                    <div>
+                        <span class="label">Última revisión</span>
+                        <span class="value" id="status-time">--</span>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', fetchStatus);
+    </script>
+</body>
+</html>
