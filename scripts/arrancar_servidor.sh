@@ -15,7 +15,7 @@ if [ ! -d "$VENV" ]; then
 fi
 
 source "$VENV/bin/activate"
-pip install --quiet flask requests
+pip install --quiet flask flask-cors requests
 
 if grep -q "NNSXS.XXXXXXXXXX" scripts/notification_server.py 2>/dev/null; then
     echo "AVISO: TTN_API_KEY no configurada - downlinks desactivados"
