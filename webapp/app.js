@@ -13,12 +13,25 @@ function updateLastUpdate() {
 }
 
 // ---------------- Dashboard ----------------
+let dashboardNodesData = [];
+let selectedNodeId = null;
+
 async function fetchNodos() {
-    if (!document.getElementById('nodos-container')) return;
+    if (!document.getElementById('dashboard-split')) return;
     try {
         const res = await fetch(`${API_BASE}/nodos`);
-        const nodos = await res.json();
-        renderNodos(nodos);
+        dashboardNodesData = await res.json();
+        
+        update3DModel();
+        
+        if (selectedNodeId) {
+            renderNodeDetails(selectedNodeId);
+        } else {
+            // Select Salon by default if available
+            if (dashboardNodesData.find(n => n.id === 'Sensor:s1')) {
+                selectNode('s1');
+            }
+        }
         updateLastUpdate();
     } catch (e) {
         console.error('Error fetching nodos:', e);
@@ -27,61 +40,94 @@ async function fetchNodos() {
     }
 }
 
-function renderNodos(nodos) {
-    const container = document.getElementById('nodos-container');
-    container.innerHTML = '';
+function selectNode(id) {
+    selectedNodeId = `Sensor:${id}`;
     
-    nodos.forEach(n => {
-        const id = n.id.replace('Sensor:', '');
-        const name = id === 's1' ? 'Salón' : id === 's2' ? 'Dormitorio' : 'Exterior';
-        
-        let extraHTML = '';
-        if (id === 's1') {
-            extraHTML = `
-                <div class="sensor-item"><span class="sensor-label">Presión Atmosférica</span><span class="sensor-value">${n.barometricPressure || '--'} hPa</span></div>
-                <div class="sensor-item"><span class="sensor-label">Humedad Relativa</span><span class="sensor-value">${n.humidity || '--'} %</span></div>
-                <div class="sensor-item"><span class="sensor-label">Vibración (Seguridad)</span><span class="sensor-value">${n.accelerationMagnitude || '--'} g</span></div>
-            `;
-        } else if (id === 's2') {
-            extraHTML = `
-                <div class="sensor-item"><span class="sensor-label">Humedad Relativa</span><span class="sensor-value">${n.humidity || '--'} %</span></div>
-                <div class="sensor-item"><span class="sensor-label">Acceso NFC</span><span class="sensor-value" style="font-size: 1rem; margin-top:4px;">${n.nfcDetected ? 'Tarjeta detectada' : 'A la espera...'}</span></div>
-            `;
-        } else if (id === 's3') {
-            extraHTML = `
-                <div class="sensor-item"><span class="sensor-label">Presión Atmosférica</span><span class="sensor-value">${n.barometricPressure || '--'} hPa</span></div>
-                <div class="sensor-item"><span class="sensor-label">Dispositivos Cercanos</span><span class="sensor-value">${n.bleDevicesNearby || '0'}</span></div>
-            `;
-        }
+    // Highlight room in 3D model
+    document.querySelectorAll('.room').forEach(el => el.classList.remove('active'));
+    const roomEl = document.getElementById(`room-${id}`);
+    if (roomEl) roomEl.classList.add('active');
+    
+    renderNodeDetails(selectedNodeId);
+}
 
-        const cardHTML = `
-            <div class="card">
-                <div class="card-header">
-                    <div class="card-title">${name} <span style="font-size:0.8em; color:var(--text-muted); font-weight:normal">(${id})</span></div>
-                    <span class="badge ${n.temperature ? 'good' : 'warn'}">En línea</span>
+function update3DModel() {
+    // We could add status indicators to the 3D model (e.g. red dot if disconnected)
+    dashboardNodesData.forEach(n => {
+        const shortId = n.id.replace('Sensor:', '');
+        const dot = document.querySelector(`#room-${shortId} .node-dot`);
+        if (dot) {
+            dot.style.backgroundColor = n.temperature ? 'var(--success)' : 'var(--warning)';
+        }
+    });
+}
+
+function renderNodeDetails(sensorId) {
+    const container = document.getElementById('node-details-panel');
+    if (!container) return;
+    
+    const n = dashboardNodesData.find(node => node.id === sensorId);
+    if (!n) {
+        container.innerHTML = '<div class="empty-state">No hay datos disponibles para esta zona.</div>';
+        return;
+    }
+    
+    const id = n.id.replace('Sensor:', '');
+    const name = id === 's1' ? 'Salón' : id === 's2' ? 'Dormitorio' : 'Exterior';
+    
+    let extraHTML = '';
+    if (id === 's1') {
+        extraHTML = `
+            <div class="sensor-item"><span class="sensor-label">Presión Atmosférica</span><span class="sensor-value">${n.barometricPressure || '--'} hPa</span></div>
+            <div class="sensor-item"><span class="sensor-label">Humedad Relativa</span><span class="sensor-value">${n.humidity || '--'} %</span></div>
+            <div class="sensor-item"><span class="sensor-label">Vibración (Seguridad)</span><span class="sensor-value">${n.accelerationMagnitude || '--'} g</span></div>
+        `;
+    } else if (id === 's2') {
+        extraHTML = `
+            <div class="sensor-item"><span class="sensor-label">Humedad Relativa</span><span class="sensor-value">${n.humidity || '--'} %</span></div>
+            <div class="sensor-item"><span class="sensor-label">Acceso NFC</span><span class="sensor-value" style="font-size: 1rem; margin-top:4px;">${n.nfcDetected ? 'Tarjeta detectada' : 'A la espera...'}</span></div>
+        `;
+    } else if (id === 's3') {
+        extraHTML = `
+            <div class="sensor-item"><span class="sensor-label">Presión Atmosférica</span><span class="sensor-value">${n.barometricPressure || '--'} hPa</span></div>
+            <div class="sensor-item"><span class="sensor-label">Dispositivos Cercanos</span><span class="sensor-value">${n.bleDevicesNearby || '0'}</span></div>
+        `;
+    }
+
+    container.innerHTML = `
+        <div class="card detail-card slide-in">
+            <div class="card-header">
+                <div>
+                    <h2 class="card-title" style="font-size: 1.5rem">${name}</h2>
+                    <div style="font-size:0.875rem; color:var(--text-muted); margin-top: 0.25rem;">ID de nodo: ${id}</div>
                 </div>
-                <div class="sensor-grid">
-                    <div class="sensor-item">
+                <span class="badge ${n.temperature ? 'good' : 'warn'}">${n.temperature ? 'En línea' : 'Sin conexión'}</span>
+            </div>
+            <div class="sensor-grid" style="grid-template-columns: 1fr; gap: 1.5rem;">
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div class="sensor-item" style="background:#f8fafc; border: 1px solid var(--border-color)">
                         <span class="sensor-label">Temperatura</span>
                         <span class="sensor-value">${n.temperature || '--'} °C</span>
                     </div>
-                    <div class="sensor-item">
+                    <div class="sensor-item" style="background:#f8fafc; border: 1px solid var(--border-color)">
                         <span class="sensor-label">Luminosidad</span>
                         <span class="sensor-value">${n.luminosity || '--'} lx</span>
                     </div>
-                    ${extraHTML}
                 </div>
-                <div style="border-top: 1px solid var(--border-color); padding-top: 1rem; margin-top: 0.5rem;">
-                    <span class="sensor-label">Iluminación Inteligente</span>
-                    <div style="display:flex; gap:0.5rem; margin-top:0.5rem;">
-                        <input type="color" id="color-${id}" value="#ffbb00" style="width:100%; height:36px; padding:2px; cursor:pointer;" title="Escoge el color de la luz">
-                        <button class="btn-primary" onclick="sendColor('${id}')">Aplicar</button>
-                    </div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    ${extraHTML.replace(/<div class="sensor-item">/g, '<div class="sensor-item" style="background:#f8fafc; border: 1px solid var(--border-color)">')}
                 </div>
             </div>
-        `;
-        container.innerHTML += cardHTML;
-    });
+            <div style="border-top: 1px solid var(--border-color); padding-top: 1.5rem; margin-top: 1.5rem;">
+                <span class="sensor-label">Iluminación Inteligente</span>
+                <p style="font-size:0.875rem; color:var(--text-muted); margin-bottom: 1rem;">Ajusta el ambiente de color para esta ubicación.</p>
+                <div style="display:flex; gap:1rem; align-items:center;">
+                    <input type="color" id="color-${id}" value="#ffbb00" style="width:100px; height:46px; padding:2px; cursor:pointer;" title="Escoge el color de la luz">
+                    <button class="btn-primary" onclick="sendColor('${id}')" style="flex:1; height:46px">Aplicar Nueva Iluminación</button>
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 async function sendColor(nodoId) {
