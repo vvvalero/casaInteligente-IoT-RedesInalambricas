@@ -38,27 +38,27 @@ function renderNodos(nodos) {
         let extraHTML = '';
         if (id === 's1') {
             extraHTML = `
-                <div class="sensor-item"><span class="sensor-label">Presión</span><span class="sensor-value">${n.barometricPressure || '--'} hPa</span></div>
-                <div class="sensor-item"><span class="sensor-label">Humedad</span><span class="sensor-value">${n.humidity || '--'} %</span></div>
-                <div class="sensor-item"><span class="sensor-label">Acelerómetro</span><span class="sensor-value">${n.accelerationMagnitude || '--'} g</span></div>
+                <div class="sensor-item"><span class="sensor-label">Presión Atmosférica</span><span class="sensor-value">${n.barometricPressure || '--'} hPa</span></div>
+                <div class="sensor-item"><span class="sensor-label">Humedad Relativa</span><span class="sensor-value">${n.humidity || '--'} %</span></div>
+                <div class="sensor-item"><span class="sensor-label">Vibración (Seguridad)</span><span class="sensor-value">${n.accelerationMagnitude || '--'} g</span></div>
             `;
         } else if (id === 's2') {
             extraHTML = `
-                <div class="sensor-item"><span class="sensor-label">Humedad</span><span class="sensor-value">${n.humidity || '--'} %</span></div>
-                <div class="sensor-item"><span class="sensor-label">Último NFC</span><span class="sensor-value" style="font-size: 1rem; margin-top:4px;">${n.nfcDetected ? 'Detectado' : 'Esperando...'}</span></div>
+                <div class="sensor-item"><span class="sensor-label">Humedad Relativa</span><span class="sensor-value">${n.humidity || '--'} %</span></div>
+                <div class="sensor-item"><span class="sensor-label">Acceso NFC</span><span class="sensor-value" style="font-size: 1rem; margin-top:4px;">${n.nfcDetected ? 'Tarjeta detectada' : 'A la espera...'}</span></div>
             `;
         } else if (id === 's3') {
             extraHTML = `
-                <div class="sensor-item"><span class="sensor-label">Presión</span><span class="sensor-value">${n.barometricPressure || '--'} hPa</span></div>
-                <div class="sensor-item"><span class="sensor-label">Disp. BLE</span><span class="sensor-value">${n.bleDevicesNearby || '0'}</span></div>
+                <div class="sensor-item"><span class="sensor-label">Presión Atmosférica</span><span class="sensor-value">${n.barometricPressure || '--'} hPa</span></div>
+                <div class="sensor-item"><span class="sensor-label">Dispositivos Cercanos</span><span class="sensor-value">${n.bleDevicesNearby || '0'}</span></div>
             `;
         }
 
         const cardHTML = `
             <div class="card">
                 <div class="card-header">
-                    <div class="card-title">${name} (${id})</div>
-                    <span class="badge ${n.temperature ? 'good' : 'warn'}">Conectado</span>
+                    <div class="card-title">${name} <span style="font-size:0.8em; color:var(--text-muted); font-weight:normal">(${id})</span></div>
+                    <span class="badge ${n.temperature ? 'good' : 'warn'}">En línea</span>
                 </div>
                 <div class="sensor-grid">
                     <div class="sensor-item">
@@ -72,10 +72,10 @@ function renderNodos(nodos) {
                     ${extraHTML}
                 </div>
                 <div style="border-top: 1px solid var(--border-color); padding-top: 1rem; margin-top: 0.5rem;">
-                    <span class="sensor-label">Control LED RGB</span>
+                    <span class="sensor-label">Iluminación Inteligente</span>
                     <div style="display:flex; gap:0.5rem; margin-top:0.5rem;">
-                        <input type="color" id="color-${id}" value="#ff0000" style="width:100%; height:36px; padding:2px; cursor:pointer;">
-                        <button class="btn-primary" onclick="sendColor('${id}')">Enviar</button>
+                        <input type="color" id="color-${id}" value="#ffbb00" style="width:100%; height:36px; padding:2px; cursor:pointer;" title="Escoge el color de la luz">
+                        <button class="btn-primary" onclick="sendColor('${id}')">Aplicar</button>
                     </div>
                 </div>
             </div>
@@ -90,15 +90,17 @@ async function sendColor(nodoId) {
     const g = parseInt(hex.substring(3,5), 16);
     const b = parseInt(hex.substring(5,7), 16);
     
+    const nodeName = nodoId === 's1' ? 'Salón' : nodoId === 's2' ? 'Dormitorio' : 'Exterior';
+    
     try {
         await fetch(`${API_BASE}/led/${nodoId}`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({r, g, b})
         });
-        alert('Color enviado al ' + nodoId);
+        alert(`Iluminación actualizada en: ${nodeName}`);
     } catch(e) {
-        alert('Error al enviar color');
+        alert(`Error al actualizar la iluminación en: ${nodeName}`);
     }
 }
 
@@ -119,7 +121,7 @@ async function fetchUIDs() {
             `;
         });
     } catch(e) {
-        document.getElementById('uid-list').innerHTML = 'Error al cargar UIDs';
+        document.getElementById('uid-list').innerHTML = 'Error al cargar las tarjetas de acceso';
     }
 }
 
@@ -133,17 +135,17 @@ async function addUID(uid) {
         document.getElementById('new-uid').value = '';
         fetchUIDs();
     } catch(e) {
-        alert("Error añadiendo UID");
+        alert("Error al registrar la nueva tarjeta");
     }
 }
 
 async function deleteUID(uid) {
-    if(!confirm(`¿Eliminar UID ${uid}?`)) return;
+    if(!confirm(`¿Revocar acceso a la tarjeta con código ${uid}?`)) return;
     try {
         await fetch(`${API_BASE}/nfc/uids/${uid}`, { method: 'DELETE' });
         fetchUIDs();
     } catch(e) {
-        alert("Error eliminando UID");
+        alert("Error al revocar la tarjeta");
     }
 }
 
