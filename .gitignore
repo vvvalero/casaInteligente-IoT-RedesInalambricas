@@ -4,12 +4,6 @@ lopy4/credentials.py
 # Credenciales reales del ESP32
 esp32/include/config_secret.h
 
-# Variables de entorno
-.env
-.env.local
-.env.*.local
-*.env
-
 # Claves y certificados
 *.pem
 *.key

@@ -33,8 +33,8 @@ FS_HEADERS = {
 }
 
 # TTN — editar aquí para uso local, o configurar en .env para DMZ
-TTN_APP_ID   = os.environ.get("TTN_APP_ID",  "casa-inteligente-iot")
-TTN_API_KEY  = os.environ.get("TTN_API_KEY", "NNSXS.XXXXXXXXXX")
+TTN_APP_ID   = os.environ.get("TTN_APP_ID",  "casa-iot")
+TTN_API_KEY  = os.environ.get("TTN_API_KEY", "NNSXS.HYUMPGJHVMNT5PGNUSM4XKLXHVZSS2ZSE3G6A5A.UJOMJV5SBYS5GQZK2FJA6B7XDOSRCIBNL7R5WMUKZWBXDVPLJDWA")
 TTN_API_BASE = "https://eu1.cloud.thethings.network/api/v3"
 
 SENSOR_TO_TTN = {
