@@ -35,50 +35,53 @@
 
             <div class="dashboard-split" id="dashboard-split">
                 <!-- Modelo 3D (Izquierda) -->
-                <div class="house-container">
-                    <div class="house-3d">
-                        
-                        <!-- PISO 0: Salón, Baño, Jardín -->
-                        <div class="floor floor-0">
-                            <div class="room room-salon" onclick="selectNode('s1')" id="room-s1">
-                                <div class="wall wall-n"></div>
-                                <div class="wall wall-w"></div>
-                                <span class="room-label">Salón</span>
-                                <div class="node-dot"></div>
-                            </div>
-                            
-                            <div class="room room-bano">
-                                <div class="wall wall-n"></div>
-                                <div class="wall wall-e"></div>
-                                <span class="room-label" style="opacity: 0.6;">Baño</span>
+                <div class="house-wrapper">
+                    <div class="house-container" title="Pasa el cursor para ver el interior · Haz clic en una estancia para ver sus datos">
+                        <div class="house-3d">
+
+                            <!-- PISO 0: Salón, Baño, Jardín -->
+                            <div class="floor floor-0">
+                                <div class="room room-salon" onclick="selectNode('s1')" id="room-s1">
+                                    <div class="wall wall-n"></div>
+                                    <div class="wall wall-w"></div>
+                                    <span class="room-label">Salón</span>
+                                    <div class="node-dot"></div>
+                                </div>
+
+                                <div class="room room-bano">
+                                    <div class="wall wall-n"></div>
+                                    <div class="wall wall-e"></div>
+                                    <span class="room-label" style="opacity: 0.6;">Baño</span>
+                                </div>
+
+                                <div class="room room-exterior" onclick="selectNode('s3')" id="room-s3">
+                                    <span class="room-label">Jardín</span>
+                                    <div class="node-dot"></div>
+                                </div>
                             </div>
 
-                            <div class="room room-exterior" onclick="selectNode('s3')" id="room-s3">
-                                <span class="room-label">Jardín</span>
-                                <div class="node-dot"></div>
+                            <!-- PISO 1: Dormitorio -->
+                            <div class="floor floor-1">
+                                <div class="room room-dormitorio" onclick="selectNode('s2')" id="room-s2">
+                                    <div class="wall wall-n"></div>
+                                    <div class="wall wall-w"></div>
+                                    <div class="wall wall-e"></div>
+                                    <span class="room-label">Dormitorio</span>
+                                    <div class="node-dot"></div>
+                                </div>
                             </div>
+
+                            <!-- TEJADO -->
+                            <div class="floor roof-level">
+                                <div class="roof-container">
+                                    <div class="roof-left"></div>
+                                    <div class="roof-right"></div>
+                                </div>
+                            </div>
+
                         </div>
-
-                        <!-- PISO 1: Dormitorio -->
-                        <div class="floor floor-1">
-                            <div class="room room-dormitorio" onclick="selectNode('s2')" id="room-s2">
-                                <div class="wall wall-n"></div>
-                                <div class="wall wall-w"></div>
-                                <div class="wall wall-e"></div>
-                                <span class="room-label">Dormitorio</span>
-                                <div class="node-dot"></div>
-                            </div>
-                        </div>
-
-                        <!-- TEJADO -->
-                        <div class="floor roof-level">
-                            <div class="roof-container">
-                                <div class="roof-left"></div>
-                                <div class="roof-right"></div>
-                            </div>
-                        </div>
-
                     </div>
+                    <p class="house-hint">Pasa el cursor para ver el interior &middot; Clic en una estancia para explorar</p>
                 </div>
 
                 <!-- Panel de Detalles del Sensor Seleccionado (Derecha) -->

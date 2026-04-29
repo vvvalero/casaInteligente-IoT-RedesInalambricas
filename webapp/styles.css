@@ -44,16 +44,28 @@ body {
 }
 
 .house-container {
-    height: 550px;
-    background: var(--bg-card);
+    height: 560px;
+    background: radial-gradient(ellipse at 35% 40%, #1e3a5f 0%, #0f172a 60%, #020617 100%);
     border-radius: var(--radius);
     display: flex;
     align-items: center;
     justify-content: center;
     perspective: 1500px;
-    box-shadow: var(--shadow-md);
-    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-lg);
+    border: 1px solid #334155;
     overflow: hidden;
+    position: relative;
+}
+
+.house-container::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(148,163,184,0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(148,163,184,0.05) 1px, transparent 1px);
+    background-size: 28px 28px;
+    pointer-events: none;
 }
 
 .house-3d {
@@ -115,94 +127,117 @@ body {
 /* Paredes estructurales (hacia ARRIBA) */
 .wall {
     position: absolute;
-    background-color: #f1f5f9;
-    border: 1px solid #cbd5e1;
-    opacity: 0.98;
+    border: 1px solid rgba(0,0,0,0.12);
+    opacity: 0.97;
 }
 /* Pared Norte (trasera) */
 .wall-n {
-    top: 0; left: 0; 
+    top: 0; left: 0;
     width: 100%; height: 70px;
     transform-origin: top;
     transform: rotateX(-90deg);
-    background-color: #e2e8f0; /* Sombra base */
+    background: linear-gradient(to bottom, #f1f5f9, #dde3ea);
 }
 /* Pared Oeste (izquierda) */
 .wall-w {
-    top: 0; left: 0; 
+    top: 0; left: 0;
     width: 70px; height: 100%;
     transform-origin: left;
     transform: rotateY(-90deg);
-    background-color: #cbd5e1; /* Sombra oscura */
+    background: linear-gradient(to right, #b8c4d0, #c8d6e0);
 }
 /* Pared Este (derecha - para Baño) */
 .wall-e {
-    top: 0; right: 0; 
+    top: 0; right: 0;
     width: 70px; height: 100%;
     transform-origin: right;
     transform: rotateY(90deg);
-    background-color: #f8fafc; /* Iluminado */
+    background: linear-gradient(to left, #f0f4f8, #f8fafc);
 }
 
 .room-label {
-    transform: rotateZ(45deg) rotateX(-60deg) translateZ(45px);
-    font-weight: 800;
-    color: #334155;
-    background: rgba(255,255,255,0.95);
-    padding: 6px 14px;
-    border-radius: 8px;
+    transform: rotateZ(45deg) rotateX(-60deg) translateZ(52px);
+    font-weight: 700;
+    color: #1e293b;
+    background: rgba(255,255,255,0.96);
+    padding: 5px 12px;
+    border-radius: 6px;
     pointer-events: none;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-    font-size: 0.8125rem;
-    letter-spacing: 0.05em;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    font-size: 0.75rem;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
-    border: 1px solid #cbd5e1;
+    border: 1px solid rgba(148,163,184,0.5);
     z-index: 10;
 }
 
 .node-dot {
     position: absolute;
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     background: var(--success);
     border-radius: 50%;
-    transform: translateZ(5px);
-    box-shadow: 0 0 15px var(--success), inset 0 0 4px rgba(255,255,255,0.8);
-    border: 2px solid white;
+    transform: translateZ(6px);
+    border: 2px solid rgba(255,255,255,0.9);
+    animation: nodePulse 2.5s ease-out infinite;
+}
+
+@keyframes nodePulse {
+    0%   { box-shadow: 0 0 0 0 rgba(16,185,129,0.7), 0 0 8px rgba(16,185,129,0.5); }
+    60%  { box-shadow: 0 0 0 9px rgba(16,185,129,0), 0 0 16px rgba(16,185,129,0.2); }
+    100% { box-shadow: 0 0 0 0 rgba(16,185,129,0),   0 0 8px rgba(16,185,129,0.5); }
 }
 
 /* --- MATERIALES Y COLORES DE LAS ESTANCIAS --- */
-/* La casa ocupa el top 60%, el exterior es el bottom 40% */
 
 .room-salon {
     top: 0; left: 0; width: 65%; height: 60%;
-    background-color: #fef08a; /* Suelo cálido/madera */
+    background: repeating-linear-gradient(
+        45deg,
+        #fde68a 0px, #fde68a 10px,
+        #fef3c7 10px, #fef3c7 20px
+    );
 }
-.room-salon .node-dot { bottom: 15%; left: 20%; }
+.room-salon:hover { filter: brightness(1.08) saturate(1.1); }
+.room-salon .node-dot { bottom: 15%; left: 18%; }
 
 .room-bano {
     top: 0; right: 0; width: 35%; height: 60%;
-    background-color: #e5e5e5; /* Suelo azulejo gris */
+    background: repeating-linear-gradient(
+        0deg,
+        #e2e8f0 0px, #e2e8f0 8px,
+        #f1f5f9 8px, #f1f5f9 16px
+    );
     cursor: default;
 }
 
 .room-dormitorio {
     top: 0; left: 0; width: 100%; height: 60%;
-    background-color: #e0e7ff; /* Suelo moqueta/alfombra */
+    background: repeating-linear-gradient(
+        45deg,
+        #c7d2fe 0px, #c7d2fe 10px,
+        #e0e7ff 10px, #e0e7ff 20px
+    );
 }
-.room-dormitorio .node-dot { top: 25%; left: 25%; }
+.room-dormitorio:hover { filter: brightness(1.08) saturate(1.1); }
+.room-dormitorio .node-dot { top: 22%; left: 22%; }
 
 .room-exterior {
     bottom: 0; left: 0; width: 100%; height: 40%;
-    background-color: #bbf7d0; /* Suelo césped */
-    border: 2px solid #86efac;
+    background: repeating-linear-gradient(
+        90deg,
+        #86efac 0px, #86efac 5px,
+        #bbf7d0 5px, #bbf7d0 14px
+    );
+    border-top: 2px solid #4ade80;
 }
-.room-exterior .node-dot { top: 40%; right: 25%; }
+.room-exterior:hover { filter: brightness(1.08) saturate(1.1); }
+.room-exterior .node-dot { top: 40%; right: 22%; }
 
 /* --- TEJADO (Simulación de 2 aguas) --- */
 .roof-container {
     position: absolute;
-    top: 0; left: 0; width: 100%; height: 60%; /* Abarca sobre las habitaciones de la casa */
+    top: 0; left: 0; width: 100%; height: 60%;
     transform-style: preserve-3d;
     transition: opacity 0.5s;
 }
@@ -210,80 +245,36 @@ body {
 .roof-left {
     position: absolute;
     top: -5%; left: -5%;
-    width: 55%; height: 110%; /* Ligeramente más grande como un alero */
-    background: #ef4444; /* Teja roja */
+    width: 55%; height: 110%;
+    background: linear-gradient(to right, #f87171, #dc2626);
     transform-origin: right;
-    transform: translateY(-5%) rotateY(-20deg); /* 20 grados de inclinación */
-    border: 2px solid #b91c1c;
-    opacity: 0.9;
+    transform: translateY(-5%) rotateY(-22deg);
+    border: 1.5px solid #b91c1c;
+    opacity: 0.93;
 }
 
 .roof-right {
     position: absolute;
     top: -5%; right: -5%;
-    width: 55%; height: 110%; /* Ligeramente más grande como un alero */
-    background: #dc2626; /* Sombra propia de la teja */
+    width: 55%; height: 110%;
+    background: linear-gradient(to left, #c0392b, #922b21);
     transform-origin: left;
-    transform: translateY(-5%) rotateY(20deg);
-    border: 2px solid #991b1b;
-    opacity: 0.9;
-}
-    left: 0;
-    background-color: #fef08a; /* Suelo cálido/madera */
-}
-.room-salon::after, .room-salon::before { background-color: #fde047; }
-.room-salon:hover, .room-salon.active { background-color: #fef9c3; }
-
-.room-salon .node-dot { bottom: 15%; left: 15%; }
-
-.room-dormitorio {
-    width: 60%;
-    height: 40%;
-    top: 0;
-    left: 0;
-    background-color: #e0e7ff; /* Suelo frío/azulejo */
-}
-.room-dormitorio::after, .room-dormitorio::before { background-color: #c7d2fe; }
-.room-dormitorio:hover, .room-dormitorio.active { background-color: #eef2ff; }
-
-.room-dormitorio .node-dot { top: 20%; left: 20%; }
-
-/* --- EXTERIOR --- */
-.room-exterior {
-    bottom: 0; left: 0; width: 100%; height: 40%;
-    background-color: #bbf7d0; /* Suelo césped */
-    border: 2px solid #86efac;
-}
-.room-exterior .node-dot { top: 40%; right: 25%; }
-
-/* --- TEJADO (Simulación de 2 aguas) --- */
-.roof-container {
-    position: absolute;
-    top: 0; left: 0; width: 100%; height: 60%; /* Abarca sobre las habitaciones de la casa */
-    transform-style: preserve-3d;
-    transition: opacity 0.5s;
+    transform: translateY(-5%) rotateY(22deg);
+    border: 1.5px solid #7f1d1d;
+    opacity: 0.93;
 }
 
-.roof-left {
-    position: absolute;
-    top: -5%; left: -5%;
-    width: 55%; height: 110%; /* Ligeramente más grande como un alero */
-    background: #ef4444; /* Teja roja */
-    transform-origin: right;
-    transform: translateY(-5%) rotateY(-20deg); /* 20 grados de inclinación */
-    border: 2px solid #b91c1c;
-    opacity: 0.9;
+.house-wrapper {
+    display: flex;
+    flex-direction: column;
 }
 
-.roof-right {
-    position: absolute;
-    top: -5%; right: -5%;
-    width: 55%; height: 110%; /* Ligeramente más grande como un alero */
-    background: #dc2626; /* Sombra propia de la teja */
-    transform-origin: left;
-    transform: translateY(-5%) rotateY(20deg);
-    border: 2px solid #991b1b;
-    opacity: 0.9;
+.house-hint {
+    text-align: center;
+    font-size: 0.75rem;
+    color: #94a3b8;
+    margin-top: 0.75rem;
+    letter-spacing: 0.04em;
 }
 
 .empty-state {
