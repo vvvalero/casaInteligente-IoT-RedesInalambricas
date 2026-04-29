@@ -97,12 +97,14 @@ if NODE_TYPE == 'salon':
         print('[Salon] LIS2HH12 no disponible: {}'.format(e))
 
 elif NODE_TYPE == 'dormitorio':
-    try:
-        from nfc import PN532
-        _nfc = PN532()
-        print('[Dormitorio] PN532 OK')
-    except Exception as e:
-        print('[Dormitorio] PN532 no disponible: {}'.format(e))
+    _nfc = None
+    print('[Dormitorio] NFC ignorado (de momento)')
+    # try:
+    #     from nfc import PN532
+    #     _nfc = PN532()
+    #     print('[Dormitorio] PN532 OK')
+    # except Exception as e:
+    #     print('[Dormitorio] PN532 no disponible: {}'.format(e))
 
 elif NODE_TYPE == 'exterior':
     try:
