@@ -55,6 +55,7 @@ services:
       - smarthome-net
     ports:
       - "4041:4041"
+      - "7896:7896"
     environment:
       - IOTA_CB_HOST=orion
       - IOTA_CB_PORT=1026
@@ -73,6 +74,7 @@ services:
       - IOTA_PROVIDER_URL=http://iot-agent:4041
       - IOTA_DEFAULT_TRANSPORT=MQTT
       - IOTA_MULTI_CORE=true
+      - IOTA_HTTP_PORT=7896
       - IOTA_AMQP_DISABLE=true
     healthcheck:
       test: curl --fail -s http://iot-agent:4041/iot/about || exit 1

@@ -3,7 +3,7 @@
 # Simula el envío de datos de sensores via MQTT/UltraLight 2.0
 # para probar el sistema sin hardware físico.
 #
-# Simula los 5 sensores de la casa con valores realistas y variación.
+# Simula los 3 nodos de la casa con valores realistas y variación.
 # Dependencias: pip install paho-mqtt
 # Uso:          python3 mqtt_simulator.py
 
@@ -25,38 +25,59 @@ INTERVALO   = 30   # segundos entre envíos (para pruebas, valor bajo)
 # Sensores: device_id → habitación para logging
 SENSORES = {
     "s1": "Salón",
-    "s2": "Cocina",
-    "s3": "Dormitorio",
-    "s4": "Baño",
-    "s5": "Exterior",
+    "s2": "Dormitorio",
+    "s3": "Exterior",
 }
 
-# Valores base por habitación (temperatura, humedad, luminosidad base)
+# Valores base por habitación
 VALORES_BASE = {
-    "s1": {"t": 22.0, "h": 50.0, "l": 60},   # Salón
-    "s2": {"t": 24.0, "h": 65.0, "l": 70},   # Cocina (más calor/humedad)
-    "s3": {"t": 21.0, "h": 45.0, "l": 10},   # Dormitorio (más oscuro)
-    "s4": {"t": 23.0, "h": 75.0, "l": 40},   # Baño (más humedad)
-    "s5": {"t": 18.0, "h": 60.0, "l": 85},   # Exterior (más luz, menos temp)
+    "s1": {"t": 22.0, "h": 50.0, "l": 60, "p": 1013.2, "acc": 1.0},
+    "s2": {"t": 21.0, "h": 45.0, "l": 10, "nfc": True},
+    "s3": {"t": 18.0, "h": 60.0, "p": 1010.5, "ble": 2},
 }
 
 
 def generar_lectura(sensor_id, ciclo):
-    """Genera valores realistas con variación sinusoidal y ruido."""
+    """Genera valores realistas adaptados al sensor actual y añade ruido.
+       Usa las claves exactas (object_id) configuradas en el IoT Agent.
+    """
     base = VALORES_BASE[sensor_id]
     t_offset = ciclo * 0.1
 
     temp = base["t"] + 3.0 * math.sin(t_offset) + random.uniform(-0.5, 0.5)
     hum  = base["h"] + 8.0 * math.sin(t_offset + 1.0) + random.uniform(-1, 1)
-    lux  = base["l"] + 20 * math.sin(t_offset + 2.0) + random.uniform(-5, 5)
-    pres = 1 if random.random() < 0.3 else 0   # 30% de probabilidad de presencia
 
-    # Redondear y limitar rangos
+    # Redondear temp y hum
     temp = round(max(-10, min(50, temp)), 1)
     hum  = round(max(0, min(100, hum)), 1)
-    lux  = int(max(0, min(100, lux)))
+    
+    lectura = {"temperature": temp, "humidity": hum}
+    
+    # Valores extra por sensor
+    if "l" in base:
+        lux = base["l"] + 20 * math.sin(t_offset + 2.0) + random.uniform(-5, 5)
+        lectura["luminosity"] = int(max(0, min(200, lux)))
+    
+    if "p" in base:
+        pres = base["p"] + 2.0 * math.cos(t_offset) + random.uniform(-1, 1)
+        lectura["barometricPressure"] = round(pres, 1)
+        
+    if "acc" in base:
+        lectura["accelerationMagnitude"] = round(base["acc"] + random.uniform(-0.1, 0.1), 3)
+        
+    if "ble" in base:
+        # Simular aforo exterior
+        ble_devs = int(base["ble"] + random.randint(-1, 2) + 2*math.sin(t_offset))
+        lectura["bleDevicesNearby"] = max(0, ble_devs)
+        
+    if "nfc" in base:
+        # Simular lectura NFC ocasional o estado esperando
+        if random.random() < 0.3:
+            lectura["nfcDetected"] = 1
+        else:
+            lectura["nfcDetected"] = 0
 
-    return temp, hum, lux, pres
+    return lectura
 
 
 def main():
@@ -75,10 +96,14 @@ def main():
             logging.info(f"--- Ciclo {ciclo} ---")
 
             for sensor_id, room_name in SENSORES.items():
-                temp, hum, lux, pres = generar_lectura(sensor_id, ciclo)
+                lectura = generar_lectura(sensor_id, ciclo)
 
-                # Formato UltraLight 2.0: t|val|h|val|l|val|p|val
-                payload = f"t|{temp}|h|hum|l|{lux}|p|{pres}".replace("hum", str(hum))
+                # Construir string formato UltraLight 2.0 (ej: temperature|22.1|humidity|50.4)
+                parts = []
+                for k, v in lectura.items():
+                    parts.extend([k, str(v)])
+                payload = "|".join(parts)
+                
                 topic   = f"/ul/{APIKEY}/{sensor_id}/attrs"
 
                 result = client.publish(topic, payload, qos=1)

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accesos NFC</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <h2>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                    <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                </svg>
+                Smart Home
+            </h2>
+            <nav>
+                <a href="index.html">Dashboard</a>
+                <a href="accesos.html" class="active">Accesos NFC</a>
+                <a href="alertas.html">Alertas</a>
+                <a href="estado.html">Estado del Sistema</a>
+            </nav>
+        </aside>
+        
+        <main class="content">
+            <header>
+                <h1>Historial y Gestión NFC</h1>
+            </header>
+
+            <div class="split-view">
+                <section class="card">
+                    <h3>UIDs Autorizados</h3>
+                    <div class="uid-list" id="uid-list">Cargando...</div>
+                    <form id="add-uid-form" style="margin-top: 15px;">
+                        <input type="text" id="new-uid" placeholder="Nuevo UID (ej. A1B2C3D4)" required>
+                        <button type="submit" class="btn-primary">Añadir UID</button>
+                    </form>
+                </section>
+
+                <section class="card">
+                    <h3>Historial de Accesos</h3>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Fecha/Hora</th>
+                                <th>UID</th>
+                                <th>Estado</th>
+                                <th>Sensor</th>
+                            </tr>
+                        </thead>
+                        <tbody id="access-log">
+                            <tr><td colspan="4">Cargando...</td></tr>
+                        </tbody>
+                    </table>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchUIDs();
+            fetchAccessLog();
+            setInterval(fetchAccessLog, 30000);
+            
+            document.getElementById('add-uid-form').addEventListener('submit', (e) => {
+                e.preventDefault();
+                addUID(document.getElementById('new-uid').value);
+            });
+        });
+    </script>
+</body>
+</html>
