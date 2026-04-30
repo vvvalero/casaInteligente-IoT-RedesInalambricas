@@ -28,11 +28,11 @@ echo "  Dominio: api.vvalero.dev"
 echo "=================================================="
 echo ""
 
-[ ! -f "docker/docker-compose.dmz.yml" ] && err "Ejecuta desde la raíz del proyecto"
+[ ! -f "docker/docker-compose_dmz.yml" ] && err "Ejecuta desde la raíz del proyecto"
 
 # ---- Leer .env o pedirlo ----
 if [ -f ".env" ]; then
-    source .env
+    set -a; source .env; set +a
     ok "Fichero .env encontrado (dominio: ${DOMAIN:-api.vvalero.dev})"
 else
     warn "Fichero .env no encontrado — usando valores por defecto"
@@ -50,7 +50,7 @@ else
     [ -n "$S2" ] && sed -i "s|lopy4-dormitorio|${S2}|" .env
     [ -n "$S3" ] && sed -i "s|lopy4-exterior|${S3}|" .env
 
-    source .env
+    set -a; source .env; set +a
     ok "Fichero .env configurado"
 fi
 
@@ -84,9 +84,26 @@ fi
 
 echo ""
 echo "--- [3/5] Arrancando Nginx en HTTP para validación Let's Encrypt ---"
-docker compose -f docker/docker-compose.dmz.yml up -d nginx
+# Nginx no puede arrancar con la config HTTPS si el certificado aún no existe.
+# Usamos config temporal HTTP-only para la validación ACME.
+NGINX_CONF="docker/nginx/conf.d/smarthome.conf"
+cp "$NGINX_CONF" "${NGINX_CONF}.bak"
+cat > "$NGINX_CONF" << 'NGINXEOF'
+server {
+    listen 80;
+    server_name _;
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    location / {
+        return 200 "ok\n";
+        add_header Content-Type text/plain;
+    }
+}
+NGINXEOF
+docker compose -f docker/docker-compose_dmz.yml up -d nginx
 sleep 5
-ok "Nginx arrancado"
+ok "Nginx arrancado (modo HTTP temporal)"
 
 echo ""
 echo "--- [4/5] Obteniendo certificado TLS para $DOMAIN ---"
@@ -103,11 +120,18 @@ docker run --rm \
 
 ok "Certificado TLS obtenido para $DOMAIN"
 
+# Restaurar configuración HTTPS completa
+cp "${NGINX_CONF}.bak" "$NGINX_CONF"
+rm "${NGINX_CONF}.bak"
+ok "Configuración Nginx HTTPS restaurada"
+
 echo ""
 echo "--- [5/5] Arrancando stack completo ---"
-docker compose -f docker/docker-compose.dmz.yml up -d
+docker compose -f docker/docker-compose_dmz.yml up -d
 echo "Esperando a que los servicios estén listos..."
 sleep 25
+docker exec smarthome-nginx nginx -s reload
+ok "Nginx recargado con configuración HTTPS"
 
 echo ""
 echo "Verificando servicios:"

@@ -23,25 +23,42 @@
                 <a href="estado.html">Estado del Sistema</a>
             </nav>
         </aside>
-        
+
         <main class="content">
             <header>
                 <h1>Registro de Alertas</h1>
+                <div id="status-indicator" class="status-indicator">
+                    <span class="dot"></span>
+                    <span id="last-update">Actualizando...</span>
+                </div>
             </header>
 
+            <section class="card" style="margin-bottom: 1.5rem;">
+                <div class="card-header">
+                    <h3 class="card-title">Alertas activas</h3>
+                </div>
+                <div id="alertas-activas">
+                    <div class="empty-state">Cargando...</div>
+                </div>
+            </section>
+
             <section class="card">
-                <h3>Alertas Activas</h3>
+                <div class="card-header">
+                    <h3 class="card-title">Historial</h3>
+                    <span style="font-size:0.8rem; color:var(--text-muted)">Últimas 50 alertas</span>
+                </div>
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>Fecha</th>
-                            <th>Sensor</th>
+                            <th>Tipo</th>
+                            <th>Fecha/Hora</th>
                             <th>Mensaje</th>
-                            <th>Gravedad</th>
+                            <th>Sensor</th>
+                            <th>Severidad</th>
                         </tr>
                     </thead>
-                    <tbody id="alertas-list">
-                        <tr><td colspan="4">Cargando...</td></tr>
+                    <tbody id="alertas-historial">
+                        <tr><td colspan="5">Cargando...</td></tr>
                     </tbody>
                 </table>
             </section>

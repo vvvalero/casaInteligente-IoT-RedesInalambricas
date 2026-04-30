@@ -272,10 +272,11 @@ def api_alertas():
             f"{ORION}/v2/entities?type=Alert&options=keyValues&limit=100",
             headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
             timeout=5)
-        # Ordenar por timestamp desc (más recientes primero)
         data = r.json()
         data.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-        return jsonify(data), 200
+        activas  = [a for a in data if a.get("active") is True]
+        historial = data[:50]
+        return jsonify({"activas": activas, "historial": historial}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -368,11 +369,12 @@ def api_delete_uid(uid):
 @app.route("/api/led/<nodo>", methods=["POST"])
 def api_led(nodo):
     data = request.get_json(silent=True) or {}
+    comando = data.get("comando", "color")
     r = data.get("r", 0)
     g = data.get("g", 0)
     b = data.get("b", 0)
-    # Payload format: [0x02, r, g, b] (por ejemplo, para enviar color)
-    _downlink(f"Sensor:{nodo}", [0x02, r, g, b])
+    cmd_byte = 0x01 if comando == "color" else 0x02
+    _downlink(f"Sensor:{nodo}", [cmd_byte, r, g, b])
     return jsonify({"status": "ok"}), 200
 
 if __name__ == "__main__":

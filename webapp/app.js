@@ -1,4 +1,4 @@
-const API_BASE = 'http://127.0.0.1:5000/api'; // Cambiar a http://api.vvalero.dev en prod
+const API_BASE = '/api';
 
 // Utility
 function formatDate(isoString) {
@@ -121,9 +121,10 @@ function renderNodeDetails(sensorId) {
             <div style="border-top: 1px solid var(--border-color); padding-top: 1.5rem; margin-top: 1.5rem;">
                 <span class="sensor-label">Iluminación Inteligente</span>
                 <p style="font-size:0.875rem; color:var(--text-muted); margin-bottom: 1rem;">Ajusta el ambiente de color para esta ubicación.</p>
-                <div style="display:flex; gap:1rem; align-items:center;">
-                    <input type="color" id="color-${id}" value="#ffbb00" style="width:100px; height:46px; padding:2px; cursor:pointer;" title="Escoge el color de la luz">
-                    <button class="btn-primary" onclick="sendColor('${id}')" style="flex:1; height:46px">Aplicar Nueva Iluminación</button>
+                <div style="display:flex; gap:0.75rem; align-items:center;">
+                    <input type="color" id="color-${id}" value="#ffbb00" style="width:80px; height:46px; padding:2px; cursor:pointer;" title="Escoge el color">
+                    <button class="btn-primary" onclick="sendColor('${id}')" style="flex:1; height:46px">Aplicar color</button>
+                    <button class="btn-secondary" onclick="sendBlink('${id}')" style="height:46px">Parpadear</button>
                 </div>
             </div>
         </div>
@@ -135,18 +136,30 @@ async function sendColor(nodoId) {
     const r = parseInt(hex.substring(1,3), 16);
     const g = parseInt(hex.substring(3,5), 16);
     const b = parseInt(hex.substring(5,7), 16);
-    
-    const nodeName = nodoId === 's1' ? 'Salón' : nodoId === 's2' ? 'Dormitorio' : 'Exterior';
-    
     try {
         await fetch(`${API_BASE}/led/${nodoId}`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({r, g, b})
+            body: JSON.stringify({comando: 'color', r, g, b})
         });
-        alert(`Iluminación actualizada en: ${nodeName}`);
     } catch(e) {
-        alert(`Error al actualizar la iluminación en: ${nodeName}`);
+        alert('Error al enviar color');
+    }
+}
+
+async function sendBlink(nodoId) {
+    const hex = document.getElementById(`color-${nodoId}`).value;
+    const r = parseInt(hex.substring(1,3), 16);
+    const g = parseInt(hex.substring(3,5), 16);
+    const b = parseInt(hex.substring(5,7), 16);
+    try {
+        await fetch(`${API_BASE}/led/${nodoId}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({comando: 'parpadear', r, g, b})
+        });
+    } catch(e) {
+        alert('Error al enviar parpadeo');
     }
 }
 
@@ -223,26 +236,48 @@ async function fetchAccessLog() {
 
 // ---------------- Alertas ----------------
 async function fetchAlertas() {
-    if (!document.getElementById('alertas-list')) return;
+    if (!document.getElementById('alertas-activas')) return;
     try {
         const res = await fetch(`${API_BASE}/alertas`);
-        const alertas = await res.json();
-        const tbody = document.getElementById('alertas-list');
-        tbody.innerHTML = '';
-        if (alertas.length === 0) tbody.innerHTML = '<tr><td colspan="4">No hay alertas activas</td></tr>';
-        
-        alertas.forEach(al => {
-            const date = formatDate(al.timestamp);
-            const severity = al.severity === 'critical' ? 'bad' : al.severity === 'warning' ? 'warn' : 'good';
-            tbody.innerHTML += `
-                <tr>
-                    <td>${date}</td>
-                    <td>${al.refSensor || '--'}</td>
-                    <td>${al.message || '--'}</td>
-                    <td><span class="badge ${severity}">${al.severity || 'info'}</span></td>
-                </tr>
-            `;
-        });
+        const data = await res.json();
+
+        const activasContainer = document.getElementById('alertas-activas');
+        const activas = data.activas || [];
+        if (activas.length === 0) {
+            activasContainer.innerHTML = '<div class="empty-state">Sin alertas activas</div>';
+        } else {
+            activasContainer.innerHTML = activas.map(al => {
+                const sev = al.severity === 'critical' ? 'bad' : 'warn';
+                return `<div class="alerta-activa ${sev}">
+                    <span class="alerta-tipo">${al.id.replace('Alert:', '')}</span>
+                    <span class="alerta-msg">${al.message || ''}</span>
+                    <span class="badge ${sev}">${al.severity || 'warning'}</span>
+                </div>`;
+            }).join('');
+        }
+
+        const tbody = document.getElementById('alertas-historial');
+        if (tbody) {
+            const historial = data.historial || [];
+            tbody.innerHTML = '';
+            if (historial.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5">Sin alertas en el historial</td></tr>';
+            } else {
+                historial.forEach(al => {
+                    const date = formatDate(al.timestamp);
+                    const sev = al.severity === 'critical' ? 'bad' : al.severity === 'warning' ? 'warn' : 'good';
+                    tbody.innerHTML += `<tr>
+                        <td>${al.id.replace('Alert:', '')}</td>
+                        <td>${date}</td>
+                        <td>${al.message || '--'}</td>
+                        <td>${al.refSensor || '--'}</td>
+                        <td><span class="badge ${sev}">${al.severity || 'info'}</span></td>
+                    </tr>`;
+                });
+            }
+        }
+
+        updateLastUpdate();
     } catch(e) {
         console.error(e);
     }
