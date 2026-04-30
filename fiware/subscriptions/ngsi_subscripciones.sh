@@ -7,7 +7,7 @@
 # Solución: se crean SIN expression. El filtrado lo hace notification_server.py.
 
 ORION="http://localhost:1026"
-NOTIF="http://172.18.1.1:5000/notify"
+NOTIF="http://notification-server:5000/notify"
 
 _sub() {
   label=$1; body=$2

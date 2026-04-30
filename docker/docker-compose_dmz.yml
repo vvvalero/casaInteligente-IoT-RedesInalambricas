@@ -58,6 +58,8 @@ services:
         condition: service_healthy
     networks:
       - smarthome-net
+    ports:
+      - "127.0.0.1:1026:1026"   # Solo localhost — para scripts de inicialización FIWARE
     command: -dbhost mongo-db -logLevel WARN -noCache
     healthcheck:
       test: curl --fail -s http://orion:1026/version || exit 1
@@ -100,6 +102,8 @@ services:
         condition: service_started
     networks:
       - smarthome-net
+    ports:
+      - "127.0.0.1:4041:4041"   # Solo localhost — para scripts de inicialización FIWARE
     environment:
       - IOTA_CB_HOST=orion
       - IOTA_CB_PORT=1026
