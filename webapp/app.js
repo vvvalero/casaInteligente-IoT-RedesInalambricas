@@ -47,6 +47,9 @@ function selectNode(id) {
     document.querySelectorAll('.room').forEach(el => el.classList.remove('active'));
     const roomEl = document.getElementById(`room-${id}`);
     if (roomEl) roomEl.classList.add('active');
+    if (typeof window.highlightRoom3D === 'function') {
+        window.highlightRoom3D(id);
+    }
     
     renderNodeDetails(selectedNodeId);
 }
