@@ -24,3 +24,9 @@ NODE_TYPE = 'salon'
 # Intervalo entre envíos en segundos
 # Pruebas: 60  |  Producción: 900
 TX_INTERVAL = 60
+
+# MAC del ESP32-NFC (solo para NODE_TYPE='dormitorio')
+# Consúltala en el Monitor Serie del ESP32 tras el primer arranque:
+#   "[BLE] Anunciando. MAC: AA:BB:CC:DD:EE:FF"
+# Formato: 'AA:BB:CC:DD:EE:FF' (mayúsculas, con separadores)
+ESP32_NFC_MAC = 'AA:BB:CC:DD:EE:FF'

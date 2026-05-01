@@ -6,7 +6,7 @@
 #     Sensores: temp, hum, lux, presión, acelerómetro
 #
 #   NODE_TYPE = 'dormitorio'
-#     Sensores: temp, hum, lux, NFC (PN532)
+#     Sensores: temp, hum, lux, NFC UID vía BLE (ESP32 + PN532)
 #
 #   NODE_TYPE = 'exterior'
 #     Sensores: temp, hum, presión, BLE scanner
@@ -54,6 +54,12 @@ except ImportError:
     import sys
     sys.exit()
 
+# MAC del ESP32-NFC (solo necesaria en nodo dormitorio)
+try:
+    from credentials import ESP32_NFC_MAC
+except ImportError:
+    ESP32_NFC_MAC = None
+
 if NODE_TYPE not in ('salon', 'dormitorio', 'exterior'):
     print('ERROR: NODE_TYPE invalido. Usa: salon | dormitorio | exterior')
     sistema_error()
@@ -97,14 +103,15 @@ if NODE_TYPE == 'salon':
         print('[Salon] LIS2HH12 no disponible: {}'.format(e))
 
 elif NODE_TYPE == 'dormitorio':
-    _nfc = None
-    print('[Dormitorio] NFC ignorado (de momento)')
-    # try:
-    #     from nfc import PN532
-    #     _nfc = PN532()
-    #     print('[Dormitorio] PN532 OK')
-    # except Exception as e:
-    #     print('[Dormitorio] PN532 no disponible: {}'.format(e))
+    if ESP32_NFC_MAC:
+        try:
+            from ble_scanner import BLEScanner
+            _ble = BLEScanner()
+            print('[Dormitorio] BLE-NFC OK (ESP32: {})'.format(ESP32_NFC_MAC))
+        except Exception as e:
+            print('[Dormitorio] BLE-NFC no disponible: {}'.format(e))
+    else:
+        print('[Dormitorio] ESP32_NFC_MAC no configurado — NFC desactivado')
 
 elif NODE_TYPE == 'exterior':
     try:
@@ -179,15 +186,12 @@ def _leer_dormitorio():
 
     uid_str = '00000000'
     uid_analog = 0.0
-    if _nfc:
-        uid = _nfc.leer_uid(timeout_ms=2000)
+    if _ble and ESP32_NFC_MAC:
+        uid = _ble.escanear_nfc_esp32(ESP32_NFC_MAC)
         if uid:
             uid_str = uid
             uid_int = int(uid[:8], 16) if len(uid) >= 8 else int(uid, 16)
             uid_analog = (uid_int & 0xFFFF) / 100.0
-            print('  NFC UID: {}'.format(uid_str))
-        else:
-            print('  NFC: sin tarjeta')
 
     print('  T={:.1f}C H={:.1f}% Lux={} NFC={}'.format(temp, hum, lux, uid_str))
 

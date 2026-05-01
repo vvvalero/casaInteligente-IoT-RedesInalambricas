@@ -87,6 +87,69 @@ class BLEScanner:
 
         return resultado
 
+    def escanear_nfc_esp32(self, mac_objetivo, duracion_ms=3000):
+        """
+        Escanea buscando el ESP32-NFC por su MAC y extrae el UID NFC
+        de su Manufacturer Specific Data (company ID 0x1234, cabecera "NFC").
+
+        Retorna el UID como string hex en mayúsculas (ej. "A1B2C3D4")
+        o None si no hay tarjeta activa o no se localiza el ESP32.
+        """
+        mac_objetivo = mac_objetivo.upper()
+        uid_encontrado = [None]
+
+        def _callback(bt_o):
+            if uid_encontrado[0] is not None:
+                return
+            adv = bt_o.get_adv()
+            if adv:
+                mac = ':'.join('{:02X}'.format(b) for b in adv.mac)
+                if mac == mac_objetivo:
+                    uid = self._parsear_uid_nfc(bytes(adv.data))
+                    if uid:
+                        uid_encontrado[0] = uid
+
+        self._bt.start_scan(-1)
+        self._bt.callback(trigger=Bluetooth.NEW_ADV_EVENT, handler=_callback)
+        time.sleep_ms(duracion_ms)
+        self._bt.stop_scan()
+        self._bt.callback(trigger=Bluetooth.NEW_ADV_EVENT, handler=None)
+
+        if uid_encontrado[0]:
+            print('[BLE-NFC] UID recibido: {}'.format(uid_encontrado[0]))
+        else:
+            print('[BLE-NFC] Sin tarjeta en ESP32 ({})'.format(mac_objetivo))
+
+        return uid_encontrado[0]
+
+    def _parsear_uid_nfc(self, data):
+        """
+        Recorre las estructuras AD del payload BLE buscando Manufacturer
+        Specific Data (tipo 0xFF) con company ID 0x1234 y cabecera "NFC".
+
+        Retorna el UID hex si flag=0x01, None en caso contrario.
+        """
+        i = 0
+        while i < len(data) - 1:
+            length = data[i]
+            if length == 0:
+                break
+            if i + length >= len(data):
+                break
+            ad_type = data[i + 1]
+            # 0xFF = Manufacturer Specific; mínimo: company(2)+NFC(3)+flag(1)+type(1)=7
+            if ad_type == 0xFF and length >= 7:
+                payload = data[i + 2 : i + length + 1]
+                if (len(payload) >= 6
+                        and payload[0] == 0x34 and payload[1] == 0x12
+                        and payload[2] == 0x4E and payload[3] == 0x46
+                        and payload[4] == 0x43):
+                    flag = payload[5]
+                    if flag == 0x01 and len(payload) > 6:
+                        return ''.join('{:02X}'.format(b) for b in payload[6:])
+            i += length + 1
+        return None
+
     def deinit(self):
         """Libera el stack BLE."""
         try:
