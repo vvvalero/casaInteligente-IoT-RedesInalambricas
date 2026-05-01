@@ -62,7 +62,7 @@ bool uidActivo = false;
 // Construye el string de datos del fabricante y actualiza el anuncio.
 // uid=nullptr y uidLen=0 emite el anuncio vacío (sin tarjeta).
 static void _actualizarAnuncio(const uint8_t* uid, uint8_t uidLen) {
-    std::string mfr;
+    String mfr;
     mfr += (char)COMPANY_ID_LOW;
     mfr += (char)COMPANY_ID_HIGH;
     mfr += 'N'; mfr += 'F'; mfr += 'C';
