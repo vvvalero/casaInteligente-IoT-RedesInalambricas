@@ -41,8 +41,10 @@
 // --- Protocolo BLE-NFC ---
 #define COMPANY_ID_LOW  0x34
 #define COMPANY_ID_HIGH 0x12
-// TTL del UID en el anuncio BLE tras leer tarjeta (ms)
-#define UID_TTL_MS 5000
+// TTL del UID en el anuncio BLE tras leer tarjeta (ms).
+// Debe ser > TX_INTERVAL del LoPy4 (60 s) para que siempre
+// haya UID activo cuando llegue el siguiente escaneo.
+#define UID_TTL_MS 90000
 
 // ============================================================
 // GLOBALES
