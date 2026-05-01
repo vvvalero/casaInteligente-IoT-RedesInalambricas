@@ -12,8 +12,16 @@
 │  Nodo 1 — Salón          Nodo 2 — Dormitorio   Nodo 3 — Exterior │
 │  SI7006A20 (T+H)         SI7006A20 (T+H)       SI7006A20 (T+H)  │
 │  LTR329ALS01 (lux)       LTR329ALS01 (lux)     MPL3115A2 (pres) │
-│  MPL3115A2 (presión)     PN532 NFC (I²C)        BLE scanner      │
+│  MPL3115A2 (presión)     BLE scanner (NFC)     BLE scanner      │
 │  LIS2HH12 (aceleróm.)    LED RGB integrado      LED RGB integrado │
+│                          ▲                                       │
+│                    BLE Advertising                               │
+│                    (Mfr. Specific Data)                          │
+│                          │                                       │
+│               ┌──────────┴──────────┐                           │
+│               │  ESP32 + PN532 NFC  │                           │
+│               │  (I²C en protoboard)│                           │
+│               └─────────────────────┘                           │
 └─────────────────────────────┬────────────────────────────────────┘
                               │ LoRaWAN OTAA EU868 · Cayenne LPP
                               ▼
@@ -59,7 +67,7 @@ En el modo DMZ, el sistema se expone en `https://api.vvalero.dev` con certificad
 
 ## Requisitos previos
 
-- **Hardware**: 3× LoPy4 + Pysense, módulo PN532 NFC
+- **Hardware**: 3× LoPy4 + Pysense, 1× ESP32, módulo PN532 NFC (para nodo dormitorio)
 - **Software**: VS Code + extensión Pymakr, WSL2 Ubuntu, Docker Engine
 - **Cuentas**: The Things Network — [eu1.cloud.thethings.network](https://eu1.cloud.thethings.network)
 
@@ -125,10 +133,32 @@ APP_EUI     = binascii.unhexlify('TU_APP_EUI_SIN_ESPACIOS')
 APP_KEY     = binascii.unhexlify('TU_APP_KEY_SIN_ESPACIOS')
 NODE_TYPE   = 'salon'      # 'salon' | 'dormitorio' | 'exterior'
 TX_INTERVAL = 60           # segundos entre envíos
+
+# Solo para el nodo dormitorio — ver Paso 6b
+ESP32_NFC_MAC = 'AA:BB:CC:DD:EE:FF'
 ```
 
 > ⚠️ `credentials.py` está en `.gitignore` — nunca se sube a GitHub.
 > Cada LoPy4 tiene su propio fichero con su `NODE_TYPE` correspondiente.
+
+#### Paso 6b · (Solo nodo dormitorio) Flashear el ESP32 y obtener su MAC
+
+1. Abre `esp32/nfc_ble_broadcaster/nfc_ble_broadcaster.ino` en el Arduino IDE
+2. Instala las librerías si no las tienes: **Gestor de librerías** → buscar `PN532` de Elechouse → instalar
+3. Selecciona tu placa ESP32 y puerto → **Subir**
+4. Abre el **Monitor Serie** a 115200 baud — aparecerá:
+```
+[NFC] PN532 v1.6
+[BLE] Anunciando. MAC: aa:bb:cc:dd:ee:ff
+[SYS] Listo — esperando tarjetas NFC...
+```
+5. Copia esa MAC en `credentials.py` del nodo dormitorio:
+```python
+ESP32_NFC_MAC = 'AA:BB:CC:DD:EE:FF'   # en mayúsculas
+```
+
+> El ESP32 se conecta al PN532 por I²C: SDA→GPIO21, SCL→GPIO22, RST→GPIO32.
+> DIP switches del PN532: SW1=OFF, SW2=ON (modo I²C).
 
 #### Paso 6 · Subir el código al LoPy4
 
@@ -421,12 +451,16 @@ smart-home/
 ├── services                              # Gestión Docker local: start|stop|reset
 ├── services_dmz                          # Gestión Docker DMZ:   start|stop|reset
 │
+├── esp32/
+│   └── nfc_ble_broadcaster/
+│       └── nfc_ble_broadcaster.ino       # ESP32: lee PN532 y emite UID por BLE advertising
+│
 ├── lopy4/
 │   ├── main.py                           # Bucle principal — soporta los 3 nodos
 │   ├── boot.py                           # Arranque del dispositivo
 │   ├── led.py                            # Control LED RGB integrado del LoPy4
-│   ├── nfc.py                            # Driver PN532 I²C (nodo dormitorio)
-│   ├── ble_scanner.py                    # Escáner BLE integrado (nodo exterior)
+│   ├── nfc.py                            # Driver PN532 I²C (reservado / no usado activamente)
+│   ├── ble_scanner.py                    # Escáner BLE: aforo (exterior) + NFC via ESP32 (dormitorio)
 │   ├── credentials.example.py            # Plantilla — SÍ se sube a Git
 │   ├── credentials.py                    # Credenciales reales — NO se sube a Git
 │   ├── pymakr.conf                       # Configuración extensión Pymakr
@@ -528,3 +562,9 @@ La presión normal en Albacete es ~941 hPa por la altitud (~700m). El umbral ya 
 
 **Downlinks TTN dan HTTP 400:**
 La `TTN_API_KEY` no está configurada en `notification_server.py`. Generarla en TTN Console → Applications → API keys con permiso `Write downlink application traffic`.
+
+**El nodo dormitorio nunca detecta tarjeta NFC:**
+1. Verifica que el ESP32 está encendido y el Monitor Serie muestra `[SYS] Listo`.
+2. Comprueba que `ESP32_NFC_MAC` en `credentials.py` coincide exactamente con la MAC impresa por el ESP32 (en mayúsculas con dos puntos: `AA:BB:CC:DD:EE:FF`).
+3. Si el ESP32 muestra `[NFC] ERROR: PN532 no detectado`, revisa el cableado I²C y que los DIP switches del PN532 estén en SW1=OFF, SW2=ON.
+4. Asegúrate de que el ESP32 está a menos de ~10 metros del LoPy4 durante el escaneo BLE.
