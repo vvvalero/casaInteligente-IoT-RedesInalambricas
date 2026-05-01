@@ -7,7 +7,7 @@
 #
 # NODE_TYPE define el comportamiento completo del nodo:
 #   'salon'      → Nodo 1: sensores completos + acelerómetro + LED RGB
-#   'dormitorio' → Nodo 2: sensores + NFC PN532 + LED acceso
+#   'dormitorio' → Nodo 2: sensores + NFC vía BLE (ESP32+PN532) + LED acceso
 #   'exterior'   → Nodo 3: sensores + BLE scanner + LED alerta
 # ============================================================
 
