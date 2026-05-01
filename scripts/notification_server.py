@@ -43,7 +43,10 @@ SENSOR_TO_TTN = {
     "Sensor:s3": os.environ.get("SENSOR_S3_DEVICE", "lopy4-exterior"),
 }
 
-NFC_AUTHORIZED = {"A1B2C3D4", "DEADBEEF"}
+# Solo los 16 bits bajos del UID (4 chars hex), que es lo que cabe en el payload Cayenne LPP.
+# El ESP32 imprime el UID completo por Serie; usa los últimos 4 chars como clave aquí.
+# Ejemplo: UID completo "A1B2C3D4" → clave "C3D4"
+NFC_AUTHORIZED = {"C3D4", "BEEF"}
 AFORO_MAX      = 5
 _log_counter   = int(time.time())
 
@@ -152,8 +155,10 @@ def r_vibracion(d, sid):
 def r_nfc(d, sid):
     if not d.get("nfcDetected", False):
         return
-    uid_partial = d.get("nfcUidPartial", 0)
-    uid = f"{uid_partial:08X}"
+    # nfcUidPartial llega como float (CayenneLPP analog ÷100).
+    # Multiplicamos ×100 para recuperar los 16 bits bajos del UID.
+    uid_partial = int(round(d.get("nfcUidPartial", 0) * 100))
+    uid = f"{uid_partial:04X}"
 
     # Obtener UIDs autorizados de Orion en tiempo real
     try:
