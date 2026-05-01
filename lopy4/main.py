@@ -25,6 +25,7 @@
 #     0x05 = alerta aforo BLE      (LED amarillo)
 #     0x06 = alerta temperatura    (byte 1: 0=frio→azul, 1=calor→naranja)
 #     0x07 = alerta exterior       (LED blanco)
+#     0x08 = sync whitelist NFC    (byte 1=count, luego 2 bytes por UID)
 # ============================================================
 
 import socket
@@ -59,6 +60,35 @@ try:
     from credentials import ESP32_NFC_MAC
 except ImportError:
     ESP32_NFC_MAC = None
+
+# ============================================================
+# WHITELIST NFC LOCAL — feedback inmediato sin esperar downlink
+# ============================================================
+_NFC_WL_FILE = '/flash/nfc_whitelist.txt'
+
+def _cargar_whitelist():
+    """Lee la whitelist del fichero en flash; si no existe usa el default de credentials."""
+    try:
+        with open(_NFC_WL_FILE, 'r') as f:
+            return set(k.strip() for k in f.read().split(',') if k.strip())
+    except OSError:
+        pass
+    try:
+        from credentials import NFC_WHITELIST_DEFAULT
+        return set(NFC_WHITELIST_DEFAULT)
+    except ImportError:
+        return set()
+
+def _guardar_whitelist(wl):
+    try:
+        with open(_NFC_WL_FILE, 'w') as f:
+            f.write(','.join(wl))
+    except Exception as e:
+        print('[WL] Error guardando: {}'.format(e))
+
+NFC_WHITELIST_LOCAL = _cargar_whitelist()
+print('[WL] Whitelist cargada: {} entradas: {}'.format(
+    len(NFC_WHITELIST_LOCAL), NFC_WHITELIST_LOCAL))
 
 if NODE_TYPE not in ('salon', 'dormitorio', 'exterior'):
     print('ERROR: NODE_TYPE invalido. Usa: salon | dormitorio | exterior')
@@ -194,6 +224,20 @@ def _leer_dormitorio():
     print('  T={:.1f}C H={:.1f}% Lux={} NFC=[{}]'.format(
         temp, hum, lux, ', '.join(uids) if uids else 'vacío'))
 
+    # Feedback visual inmediato usando whitelist local.
+    # Verde  = autorizado según caché local.
+    # Amarillo = tarjeta desconocida localmente; el servidor decide en el próximo ciclo.
+    #   (evita falsos rojos cuando la whitelist local está desincronizada)
+    for uid_str in uids:
+        uid_int_loc = int(uid_str[:8], 16) if len(uid_str) >= 8 else int(uid_str, 16)
+        uid_key = '{:04X}'.format(uid_int_loc & 0xFFFF)
+        if uid_key in NFC_WHITELIST_LOCAL:
+            print('  NFC local: {} → AUTORIZADO'.format(uid_key))
+            parpadear(led_verde, veces=2, intervalo=0.4)
+        else:
+            print('  NFC local: {} → DESCONOCIDO (verificando servidor)'.format(uid_key))
+            parpadear(led_amarillo, veces=2, intervalo=0.4)
+
     if not uids:
         uids = ['00000000']
 
@@ -268,6 +312,18 @@ def _procesar_downlink(data):
             led_naranja()
     elif cmd == 0x07:
         parpadear(led_blanco, veces=2)
+    elif cmd == 0x08 and len(data) >= 2:
+        count = data[1]
+        nueva_wl = set()
+        for i in range(count):
+            offset = 2 + i * 2
+            if offset + 1 >= len(data):
+                break
+            nueva_wl.add('{:02X}{:02X}'.format(data[offset], data[offset + 1]))
+        NFC_WHITELIST_LOCAL.clear()
+        NFC_WHITELIST_LOCAL.update(nueva_wl)
+        _guardar_whitelist(NFC_WHITELIST_LOCAL)
+        print('  Whitelist sincronizada: {}'.format(NFC_WHITELIST_LOCAL))
     else:
         print('  Downlink desconocido: 0x{:02X}'.format(cmd))
 

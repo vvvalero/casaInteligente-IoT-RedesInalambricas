@@ -113,6 +113,37 @@ def _downlink(sensor_id, bytes_list):
         logging.error(f"Downlink error {device}: {e}")
 
 
+def _push_whitelist_downlink():
+    """Envía la whitelist actual de Orion al LoPy4 dormitorio como downlink 0x08.
+    Formato: [0x08][count][uid1_hi][uid1_lo][uid2_hi][uid2_lo]...
+    Máximo 24 UIDs por limitación del payload LoRaWAN (51 bytes disponibles).
+    """
+    try:
+        r = requests.get(
+            f"{ORION}/v2/entities/Sensor:s2/attrs/nfcAuthorizedUIDs/value",
+            headers={k: v for k, v in FS_HEADERS.items() if k != 'Content-Type'},
+            timeout=3)
+        if r.status_code != 200:
+            return
+        uids = [u.strip() for u in r.text.strip().strip('"').split(',') if u.strip()]
+    except Exception as e:
+        logging.error(f"_push_whitelist_downlink: no pudo leer UIDs de Orion: {e}")
+        return
+
+    payload = [0x08, min(len(uids), 24)]
+    for uid in uids[:24]:
+        try:
+            val = int(uid, 16)
+            payload.append((val >> 8) & 0xFF)
+            payload.append(val & 0xFF)
+        except ValueError:
+            payload[1] -= 1  # no contar esta entrada inválida
+            continue
+
+    _downlink("Sensor:s2", payload)
+    logging.info(f"Whitelist sync downlink: {uids[:24]}")
+
+
 # ============================================================
 # REGLAS DE AUTOMATIZACIÓN
 # ============================================================
@@ -351,6 +382,7 @@ def api_add_uid():
         uids = set(r.text.strip().strip('"').split(',')) if r.status_code == 200 else set(NFC_AUTHORIZED)
         uids.add(uid)
         _patch("Sensor:s2", {"nfcAuthorizedUIDs": {"type": "Text", "value": ",".join(uids)}})
+        _push_whitelist_downlink()
         return jsonify({"status": "ok", "uids": list(uids)}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -367,6 +399,7 @@ def api_delete_uid(uid):
         if uid in uids:
             uids.remove(uid)
         _patch("Sensor:s2", {"nfcAuthorizedUIDs": {"type": "Text", "value": ",".join(uids)}})
+        _push_whitelist_downlink()
         return jsonify({"status": "ok", "uids": list(uids)}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500

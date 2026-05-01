@@ -30,3 +30,9 @@ TX_INTERVAL = 60
 #   "[BLE] Anunciando. MAC: AA:BB:CC:DD:EE:FF"
 # Formato: 'AA:BB:CC:DD:EE:FF' (mayúsculas, con separadores)
 ESP32_NFC_MAC = 'AA:BB:CC:DD:EE:FF'
+
+# Whitelist local de UIDs autorizados (solo los 16 bits bajos, 4 chars hex).
+# El ESP32 imprime el UID completo por Serie; usa los últimos 4 chars.
+# Ejemplo: UID completo "A1B2C3D4" → clave "C3D4"
+# Se sobreescribe automáticamente vía downlink 0x08 cuando se modifica desde el servidor.
+NFC_WHITELIST_DEFAULT = ['C3D4', 'BEEF']
