@@ -182,26 +182,33 @@ def _leer_salon():
 
 
 def _leer_dormitorio():
+    """
+    Retorna una lista de payloads Cayenne LPP: uno por cada UID en la cola
+    del ESP32, o uno con uid_analog=0 si la cola está vacía.
+    El bucle principal envía un uplink LoRaWAN por cada elemento.
+    """
     temp, hum, lux = _leer_comunes()
 
-    uid_str = '00000000'
-    uid_analog = 0.0
-    if _ble and ESP32_NFC_MAC:
-        uid = _ble.escanear_nfc_esp32(ESP32_NFC_MAC)
-        if uid:
-            uid_str = uid
-            uid_int = int(uid[:8], 16) if len(uid) >= 8 else int(uid, 16)
-            uid_analog = (uid_int & 0xFFFF) / 100.0
+    uids = _ble.escanear_nfc_esp32(ESP32_NFC_MAC) if (_ble and ESP32_NFC_MAC) else []
 
-    print('  T={:.1f}C H={:.1f}% Lux={} NFC={}'.format(temp, hum, lux, uid_str))
+    print('  T={:.1f}C H={:.1f}% Lux={} NFC=[{}]'.format(
+        temp, hum, lux, ', '.join(uids) if uids else 'vacío'))
 
-    lpp = CayenneLPP()
-    lpp.add_temperature(1, temp)
-    lpp.add_relative_humidity(2, hum)
-    lpp.add_luminosity(3, lux)
-    lpp.add_analog_input(4, uid_analog)
-    lpp.add_digital_input(5, ROOM_ID['dormitorio'])
-    return bytes(lpp.get_buffer())
+    if not uids:
+        uids = ['00000000']
+
+    payloads = []
+    for uid_str in uids:
+        uid_int = int(uid_str[:8], 16) if len(uid_str) >= 8 else int(uid_str, 16)
+        uid_analog = (uid_int & 0xFFFF) / 100.0
+        lpp = CayenneLPP()
+        lpp.add_temperature(1, temp)
+        lpp.add_relative_humidity(2, hum)
+        lpp.add_luminosity(3, lux)
+        lpp.add_analog_input(4, uid_analog)
+        lpp.add_digital_input(5, ROOM_ID['dormitorio'])
+        payloads.append(bytes(lpp.get_buffer()))
+    return payloads
 
 
 def _leer_exterior():
@@ -275,11 +282,11 @@ while True:
 
     try:
         if NODE_TYPE == 'salon':
-            payload = _leer_salon()
+            payloads = [_leer_salon()]
         elif NODE_TYPE == 'dormitorio':
-            payload = _leer_dormitorio()
+            payloads = _leer_dormitorio()   # lista: 1 payload por UID en cola
         elif NODE_TYPE == 'exterior':
-            payload = _leer_exterior()
+            payloads = [_leer_exterior()]
     except Exception as e:
         print('  Error sensores: {}'.format(e))
         sistema_error()
@@ -287,26 +294,32 @@ while True:
         sistema_conectado()
         continue
 
-    print('  Payload ({} bytes): {}'.format(
-        len(payload),
-        binascii.hexlify(payload).decode('utf-8').upper()
-    ))
+    n = len(payloads)
+    for idx, payload in enumerate(payloads):
+        print('  Payload {}/{} ({} bytes): {}'.format(
+            idx + 1, n, len(payload),
+            binascii.hexlify(payload).decode('utf-8').upper()
+        ))
 
-    sistema_transmitiendo()
-    s.setblocking(True)
-    s.send(payload)
-    print('  Uplink enviado')
+        sistema_transmitiendo()
+        s.setblocking(True)
+        s.send(payload)
+        print('  Uplink enviado')
 
-    s.setblocking(False)
-    data = s.recv(64)
+        s.setblocking(False)
+        data = s.recv(64)
 
-    if data:
-        print('  Downlink: {}'.format(
-            binascii.hexlify(data).decode('utf-8').upper()))
-        _procesar_downlink(data)
-    else:
-        print('  Sin downlink')
-        sistema_conectado()
+        if data:
+            print('  Downlink: {}'.format(
+                binascii.hexlify(data).decode('utf-8').upper()))
+            _procesar_downlink(data)
+        else:
+            print('  Sin downlink')
+            sistema_conectado()
+
+        # Breve pausa entre envíos en ráfaga para no saturar el stack LoRa
+        if idx < n - 1:
+            time.sleep(2)
 
     print('  Siguiente envio en {} s'.format(TX_INTERVAL))
     time.sleep(TX_INTERVAL)

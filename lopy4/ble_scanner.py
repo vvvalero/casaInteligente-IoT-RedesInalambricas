@@ -89,25 +89,22 @@ class BLEScanner:
 
     def escanear_nfc_esp32(self, mac_objetivo, duracion_ms=3000):
         """
-        Escanea buscando el ESP32-NFC por su MAC y extrae el UID NFC
+        Escanea buscando el ESP32-NFC por su MAC y extrae la cola de UIDs
         de su Manufacturer Specific Data (company ID 0x1234, cabecera "NFC").
 
-        Retorna el UID como string hex en mayúsculas (ej. "A1B2C3D4")
-        o None si no hay tarjeta activa o no se localiza el ESP32.
+        Retorna una lista de strings hex en mayúsculas (ej. ["A1B2C3D4", "DEADBEEF"])
+        o [] si la cola está vacía o no se localiza el ESP32.
+        Siempre toma el último paquete recibido para tener la cola más actualizada.
         """
         mac_objetivo = mac_objetivo.upper()
-        uid_encontrado = [None]
+        ultima_cola = [[]]
 
         def _callback(bt_o):
-            if uid_encontrado[0] is not None:
-                return
             adv = bt_o.get_adv()
             if adv:
                 mac = ':'.join('{:02X}'.format(b) for b in adv.mac)
                 if mac == mac_objetivo:
-                    uid = self._parsear_uid_nfc(bytes(adv.data))
-                    if uid:
-                        uid_encontrado[0] = uid
+                    ultima_cola[0] = self._parsear_cola_nfc(bytes(adv.data))
 
         self._bt.start_scan(-1)
         self._bt.callback(trigger=Bluetooth.NEW_ADV_EVENT, handler=_callback)
@@ -115,19 +112,21 @@ class BLEScanner:
         self._bt.stop_scan()
         self._bt.callback(trigger=Bluetooth.NEW_ADV_EVENT, handler=None)
 
-        if uid_encontrado[0]:
-            print('[BLE-NFC] UID recibido: {}'.format(uid_encontrado[0]))
+        uids = ultima_cola[0]
+        if uids:
+            print('[BLE-NFC] Cola: {} UID(s): {}'.format(len(uids), uids))
         else:
-            print('[BLE-NFC] Sin tarjeta en ESP32 ({})'.format(mac_objetivo))
+            print('[BLE-NFC] Cola vacía en ESP32 ({})'.format(mac_objetivo))
 
-        return uid_encontrado[0]
+        return uids
 
-    def _parsear_uid_nfc(self, data):
+    def _parsear_cola_nfc(self, data):
         """
         Recorre las estructuras AD del payload BLE buscando Manufacturer
         Specific Data (tipo 0xFF) con company ID 0x1234 y cabecera "NFC".
 
-        Retorna el UID hex si flag=0x01, None en caso contrario.
+        Retorna una lista de strings hex con todos los UIDs de la cola.
+        Formato del payload: [company(2)][NFC(3)][count][len1][uid1...][len2][uid2...]...
         """
         i = 0
         while i < len(data) - 1:
@@ -137,18 +136,30 @@ class BLEScanner:
             if i + length >= len(data):
                 break
             ad_type = data[i + 1]
-            # 0xFF = Manufacturer Specific; mínimo: company(2)+NFC(3)+flag(1)+type(1)=7
+            # mínimo: company(2)+NFC(3)+count(1)+type(1) = 7
             if ad_type == 0xFF and length >= 7:
                 payload = data[i + 2 : i + length + 1]
                 if (len(payload) >= 6
                         and payload[0] == 0x34 and payload[1] == 0x12
                         and payload[2] == 0x4E and payload[3] == 0x46
                         and payload[4] == 0x43):
-                    flag = payload[5]
-                    if flag == 0x01 and len(payload) > 6:
-                        return ''.join('{:02X}'.format(b) for b in payload[6:])
+                    count = payload[5]
+                    uids = []
+                    pos = 6
+                    for _ in range(count):
+                        if pos >= len(payload):
+                            break
+                        uid_len = payload[pos]
+                        pos += 1
+                        if pos + uid_len > len(payload):
+                            break
+                        uid_hex = ''.join('{:02X}'.format(b)
+                                          for b in payload[pos : pos + uid_len])
+                        uids.append(uid_hex)
+                        pos += uid_len
+                    return uids
             i += length + 1
-        return None
+        return []
 
     def deinit(self):
         """Libera el stack BLE."""

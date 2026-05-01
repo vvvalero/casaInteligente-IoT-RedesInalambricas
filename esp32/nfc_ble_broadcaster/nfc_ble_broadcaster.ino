@@ -1,20 +1,32 @@
-// nfc_ble_broadcaster.ino — ESP32 como puente NFC → BLE Advertising
+// nfc_ble_broadcaster.ino — ESP32 como puente NFC → BLE Advertising (cola)
 // ============================================================
 // Rol en la arquitectura:
-//   1. Lee el UID de tarjetas ISO14443A con un PN532 por I²C
-//   2. Inserta el UID en los datos del anuncio BLE (Manufacturer
-//      Specific Data, company ID 0x1234) durante UID_TTL_MS ms
-//   3. Cuando no hay tarjeta (o expira el TTL), emite el anuncio
-//      vacío (flag 0x00)
+//   1. Lee UIDs de tarjetas ISO14443A con un PN532 por I²C
+//   2. Los acumula en una cola FIFO de hasta MAX_QUEUE entradas
+//   3. Publica toda la cola en el Manufacturer Specific Data BLE
+//   4. Cada entrada expira individualmente tras UID_TTL_MS ms
 //
-// El LoPy4 del dormitorio escanea periódicamente buscando la
-// dirección MAC de este ESP32 y extrae el UID del payload BLE.
+// El LoPy4 del dormitorio lee la cola completa en un solo escaneo
+// y envía un uplink LoRaWAN por cada UID pendiente.
 //
 // Formato Manufacturer Specific Data (tipo 0xFF en advertising):
-//   [0x34][0x12]  ← Company ID 0x1234 (little-endian, personalizado)
-//   [0x4E][0x46][0x43]  ← Cabecera ASCII "NFC"
-//   [0x00 | 0x01]  ← Flag: 0x00 sin tarjeta | 0x01 tarjeta presente
-//   [uid0]...[uidN]  ← Bytes del UID (solo si flag=0x01)
+//   [0x34][0x12]       ← Company ID 0x1234 (little-endian, personalizado)
+//   [0x4E][0x46][0x43] ← Cabecera ASCII "NFC"
+//   [count]            ← Número de UIDs en cola (0 = vacío)
+//   [len1][uid1...]    ← Primer UID con prefijo de longitud
+//   [len2][uid2...]    ← Segundo UID (si existe)
+//   ...
+//
+// Presupuesto de bytes (payload BLE máx. 31):
+//   Flags AD:    3 bytes  (02 01 06)
+//   Mfr AD hdr:  2 bytes  (length + 0xFF)
+//   Company ID:  2 bytes
+//   "NFC":       3 bytes
+//   count:       1 byte
+//   ──────────────────────────────────────
+//   Disponible para UIDs: 20 bytes
+//   UIDs de 4 bytes: hasta 4  (5 bytes c/u con prefijo longitud)
+//   UIDs de 7 bytes: hasta 2  (8 bytes c/u con prefijo longitud)
 //
 // Librerías necesarias (Library Manager de Arduino IDE):
 //   - "PN532" de Elechouse (elechouse/PN532)
@@ -41,45 +53,124 @@
 // --- Protocolo BLE-NFC ---
 #define COMPANY_ID_LOW  0x34
 #define COMPANY_ID_HIGH 0x12
-// TTL del UID en el anuncio BLE tras leer tarjeta (ms).
-// Debe ser > TX_INTERVAL del LoPy4 (60 s) para que siempre
-// haya UID activo cuando llegue el siguiente escaneo.
+
+// Entradas máximas en la cola (limitado por los 20 bytes libres del payload)
+#define MAX_QUEUE 4
+
+// Tiempo que un UID permanece en la cola tras su última lectura (ms).
+// Debe ser mayor que TX_INTERVAL del LoPy4 (60 s).
 #define UID_TTL_MS 90000
 
 // ============================================================
-// GLOBALES
+// COLA DE UIDs
 // ============================================================
+struct UIDEntry {
+    uint8_t uid[7];
+    uint8_t len;
+    unsigned long ts;
+    bool active;
+};
+
 PN532_I2C pn532_i2c(Wire);
 PN532 nfc(pn532_i2c);
 
 BLEAdvertising* pAdvertising = nullptr;
-
-unsigned long uidTimestamp = 0;
-bool uidActivo = false;
+UIDEntry uidQueue[MAX_QUEUE];
 
 // ============================================================
-// HELPERS BLE
+// GESTIÓN DE COLA
 // ============================================================
 
-// Construye el string de datos del fabricante y actualiza el anuncio.
-// uid=nullptr y uidLen=0 emite el anuncio vacío (sin tarjeta).
-static void _actualizarAnuncio(const uint8_t* uid, uint8_t uidLen) {
-    String mfr;
+static void _initQueue() {
+    for (int i = 0; i < MAX_QUEUE; i++) {
+        uidQueue[i].active = false;
+        uidQueue[i].len    = 0;
+        uidQueue[i].ts     = 0;
+    }
+}
+
+static bool _uidEquals(const uint8_t* a, uint8_t aLen,
+                       const uint8_t* b, uint8_t bLen) {
+    if (aLen != bLen) return false;
+    for (int i = 0; i < aLen; i++) {
+        if (a[i] != b[i]) return false;
+    }
+    return true;
+}
+
+// Añade un UID a la cola. Si ya existe refresca su TTL.
+// Si la cola está llena sustituye la entrada más antigua.
+// Devuelve true si el anuncio debe actualizarse.
+static bool _addToQueue(const uint8_t* uid, uint8_t uidLen) {
+    for (int i = 0; i < MAX_QUEUE; i++) {
+        if (uidQueue[i].active &&
+                _uidEquals(uidQueue[i].uid, uidQueue[i].len, uid, uidLen)) {
+            uidQueue[i].ts = millis();
+            return false;
+        }
+    }
+    int slot = -1;
+    for (int i = 0; i < MAX_QUEUE; i++) {
+        if (!uidQueue[i].active) { slot = i; break; }
+    }
+    if (slot == -1) {
+        // Cola llena: reemplaza la más antigua
+        slot = 0;
+        for (int i = 1; i < MAX_QUEUE; i++) {
+            if (uidQueue[i].ts < uidQueue[slot].ts) slot = i;
+        }
+    }
+    memcpy(uidQueue[slot].uid, uid, uidLen);
+    uidQueue[slot].len    = uidLen;
+    uidQueue[slot].ts     = millis();
+    uidQueue[slot].active = true;
+    return true;
+}
+
+// Expira entradas caducadas. Devuelve true si algo cambió.
+static bool _expireQueue() {
+    bool changed = false;
+    for (int i = 0; i < MAX_QUEUE; i++) {
+        if (uidQueue[i].active &&
+                (millis() - uidQueue[i].ts >= UID_TTL_MS)) {
+            uidQueue[i].active = false;
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+static int _queueCount() {
+    int n = 0;
+    for (int i = 0; i < MAX_QUEUE; i++) {
+        if (uidQueue[i].active) n++;
+    }
+    return n;
+}
+
+// ============================================================
+// ADVERTISING BLE
+// ============================================================
+
+static void _buildAndStartAdvertising() {
+    std::string mfr;
     mfr += (char)COMPANY_ID_LOW;
     mfr += (char)COMPANY_ID_HIGH;
     mfr += 'N'; mfr += 'F'; mfr += 'C';
 
-    if (uid != nullptr && uidLen > 0) {
-        mfr += (char)0x01;
-        for (uint8_t i = 0; i < uidLen; i++) {
-            mfr += (char)uid[i];
+    int count = _queueCount();
+    mfr += (char)count;
+
+    for (int i = 0; i < MAX_QUEUE; i++) {
+        if (!uidQueue[i].active) continue;
+        mfr += (char)uidQueue[i].len;
+        for (int j = 0; j < uidQueue[i].len; j++) {
+            mfr += (char)uidQueue[i].uid[j];
         }
-    } else {
-        mfr += (char)0x00;
     }
 
     BLEAdvertisementData advData;
-    advData.setFlags(0x06);  // LE General Discoverable + no BR/EDR
+    advData.setFlags(0x06);
     advData.setManufacturerData(mfr);
 
     pAdvertising->stop();
@@ -92,7 +183,7 @@ static void _actualizarAnuncio(const uint8_t* uid, uint8_t uidLen) {
 // ============================================================
 void setup() {
     Serial.begin(115200);
-    Serial.println("\n=== ESP32 NFC-BLE Broadcaster ===");
+    Serial.println("\n=== ESP32 NFC-BLE Broadcaster (cola) ===");
 
     // --- Init PN532 ---
     pinMode(NFC_RST_PIN, OUTPUT);
@@ -107,7 +198,6 @@ void setup() {
     uint32_t versiondata = nfc.getFirmwareVersion();
     if (!versiondata) {
         Serial.println("[NFC] ERROR: PN532 no detectado. Revisa cableado y DIP switches.");
-        // Parpadeo de error indefinido para señalizar el fallo sin bloquear el micro
         while (true) { delay(500); }
     }
 
@@ -116,14 +206,15 @@ void setup() {
     Serial.print('.');
     Serial.println((versiondata >> 16) & 0xFF, DEC);
 
-    nfc.SAMConfig();  // Modo normal, sin timeout de SAM
+    nfc.SAMConfig();
 
     // --- Init BLE ---
     BLEDevice::init("ESP32-NFC-Door");
     pAdvertising = BLEDevice::getAdvertising();
     pAdvertising->setScanResponse(false);
 
-    _actualizarAnuncio(nullptr, 0);
+    _initQueue();
+    _buildAndStartAdvertising();
 
     Serial.print("[BLE] Anunciando. MAC: ");
     Serial.println(BLEDevice::getAddress().toString().c_str());
@@ -134,14 +225,14 @@ void setup() {
 // LOOP
 // ============================================================
 void loop() {
-    // Expirar UID si ha pasado el TTL
-    if (uidActivo && (millis() - uidTimestamp >= UID_TTL_MS)) {
-        _actualizarAnuncio(nullptr, 0);
-        uidActivo = false;
-        Serial.println("[NFC] TTL expirado — anuncio limpiado");
+    // Expirar entradas caducadas y actualizar el anuncio si cambió algo
+    if (_expireQueue()) {
+        _buildAndStartAdvertising();
+        Serial.print("[NFC] TTL expirado — cola: ");
+        Serial.println(_queueCount());
     }
 
-    // Intentar leer tarjeta (timeout corto para no bloquear el loop)
+    // Intentar leer tarjeta (timeout corto para no bloquear)
     uint8_t uid[7];
     uint8_t uidLength = 0;
     bool detectada = nfc.readPassiveTargetID(
@@ -153,13 +244,16 @@ void loop() {
             if (uid[i] < 0x10) Serial.print('0');
             Serial.print(uid[i], HEX);
         }
-        Serial.println();
 
-        _actualizarAnuncio(uid, uidLength);
-        uidTimestamp = millis();
-        uidActivo = true;
+        bool esNuevo = _addToQueue(uid, uidLength);
+        if (esNuevo) {
+            _buildAndStartAdvertising();
+            Serial.print(" — NUEVA entrada. Cola: ");
+        } else {
+            Serial.print(" — ya en cola (TTL refrescado). Cola: ");
+        }
+        Serial.println(_queueCount());
 
-        // Pausa para evitar lecturas duplicadas de la misma tarjeta
         delay(1000);
     }
 
