@@ -127,14 +127,54 @@ function createRoom(width, depth, height, color, id, label, isUpperFloor) {
     baseRight.castShadow = true;
     group.add(baseRight);
 
-    // Back wall
-    const backWallGeom = new THREE.BoxGeometry(width, height, 0.1);
-    const backWall = new THREE.Mesh(backWallGeom, wallMaterial);
-    backWall.position.z = -depth / 2;
-    backWall.position.y = height / 2;
-    backWall.castShadow = true;
-    backWall.receiveShadow = true;
-    group.add(backWall);
+    // Window dimensions - defined here for wall segmentation
+    const windowWidth = 0.45;
+    const windowHeight = 0.55;
+    const numWindows = 2;
+    const windowSpacing = width / (numWindows + 1);
+    const winCenterY = height * 0.55;
+    const winBottomY = winCenterY - windowHeight / 2;
+    const winTopY   = winCenterY + windowHeight / 2;
+    const frameHalfW = (windowWidth + 0.12) / 2;
+    const win1X = -width / 2 + windowSpacing;
+    const win2X = -width / 2 + windowSpacing * 2;
+
+    // Back wall - segmented around window openings so glass is visible
+    const bwZ = -depth / 2;
+    // Bottom belt (below windows, full width)
+    const bwBotGeom = new THREE.BoxGeometry(width, winBottomY, 0.1);
+    const bwBot = new THREE.Mesh(bwBotGeom, wallMaterial);
+    bwBot.position.set(0, winBottomY / 2, bwZ);
+    bwBot.castShadow = true; bwBot.receiveShadow = true;
+    group.add(bwBot);
+    // Top belt (above windows, full width)
+    const topBeltH = height - winTopY;
+    const bwTopGeom = new THREE.BoxGeometry(width, topBeltH, 0.1);
+    const bwTop = new THREE.Mesh(bwTopGeom, wallMaterial);
+    bwTop.position.set(0, winTopY + topBeltH / 2, bwZ);
+    bwTop.castShadow = true; bwTop.receiveShadow = true;
+    group.add(bwTop);
+    // Left pillar (between left wall and window 1)
+    const leftPW = win1X - frameHalfW + width / 2;
+    const bwLeftGeom = new THREE.BoxGeometry(leftPW, windowHeight, 0.1);
+    const bwLeftPillar = new THREE.Mesh(bwLeftGeom, wallMaterial);
+    bwLeftPillar.position.set(-width / 2 + leftPW / 2, winCenterY, bwZ);
+    bwLeftPillar.castShadow = true; bwLeftPillar.receiveShadow = true;
+    group.add(bwLeftPillar);
+    // Middle pillar (between window 1 and window 2)
+    const midPW = (win2X - frameHalfW) - (win1X + frameHalfW);
+    const bwMidGeom = new THREE.BoxGeometry(midPW, windowHeight, 0.1);
+    const bwMidPillar = new THREE.Mesh(bwMidGeom, wallMaterial);
+    bwMidPillar.position.set((win1X + win2X) / 2, winCenterY, bwZ);
+    bwMidPillar.castShadow = true; bwMidPillar.receiveShadow = true;
+    group.add(bwMidPillar);
+    // Right pillar (between window 2 and right wall)
+    const rightPW = width / 2 - (win2X + frameHalfW);
+    const bwRightGeom = new THREE.BoxGeometry(rightPW, windowHeight, 0.1);
+    const bwRightPillar = new THREE.Mesh(bwRightGeom, wallMaterial);
+    bwRightPillar.position.set(width / 2 - rightPW / 2, winCenterY, bwZ);
+    bwRightPillar.castShadow = true; bwRightPillar.receiveShadow = true;
+    group.add(bwRightPillar);
 
     // Left wall
     const leftWallGeom = new THREE.BoxGeometry(0.1, height, depth);
@@ -176,26 +216,21 @@ function createRoom(width, depth, height, color, id, label, isUpperFloor) {
     corniceBack.castShadow = true;
     group.add(corniceBack);
 
-    // Windows on back wall - improved design
-    const windowWidth = 0.45;
-    const windowHeight = 0.55;
-    const numWindows = 2;
-    const windowSpacing = width / (numWindows + 1);
-
+    // Windows on back wall - placed at wall plane, visible through openings
     for (let i = 0; i < numWindows; i++) {
         const xPos = -width / 2 + windowSpacing * (i + 1);
         
         // Outer window frame (dark wood)
         const frameGeom = new THREE.BoxGeometry(windowWidth + 0.12, windowHeight + 0.12, 0.18);
         const frame = new THREE.Mesh(frameGeom, frameMaterial);
-        frame.position.set(xPos, height * 0.55, -depth / 2 - 0.08);
+        frame.position.set(xPos, height * 0.55, -depth / 2);
         frame.castShadow = true;
         group.add(frame);
         
         // Glass pane with slight blue tint
         const glassGeom = new THREE.BoxGeometry(windowWidth, windowHeight, 0.08);
         const glass = new THREE.Mesh(glassGeom, windowMaterial);
-        glass.position.set(xPos, height * 0.55, -depth / 2 + 0.08);
+        glass.position.set(xPos, height * 0.55, -depth / 2);
         group.add(glass);
         
         // Window muntins (cross dividers)
@@ -207,12 +242,12 @@ function createRoom(width, depth, height, color, id, label, isUpperFloor) {
         // Vertical muntins
         const vertGeom = new THREE.BoxGeometry(0.02, windowHeight * 0.95, 0.04);
         const vertMuntin = new THREE.Mesh(vertGeom, muntinMaterial);
-        vertMuntin.position.set(xPos, height * 0.55, -depth / 2 + 0.08);
+        vertMuntin.position.set(xPos, height * 0.55, -depth / 2);
         group.add(vertMuntin);
         // Horizontal muntins
         const horizGeom = new THREE.BoxGeometry(windowWidth * 0.95, 0.02, 0.04);
         const horizMuntin = new THREE.Mesh(horizGeom, muntinMaterial);
-        horizMuntin.position.set(xPos, height * 0.55, -depth / 2 + 0.08);
+        horizMuntin.position.set(xPos, height * 0.55, -depth / 2);
         group.add(horizMuntin);
 
         // Window sill (alféizar)
@@ -223,7 +258,7 @@ function createRoom(width, depth, height, color, id, label, isUpperFloor) {
             metalness: 0.05,
         });
         const sill = new THREE.Mesh(sillGeom, sillMaterial);
-        sill.position.set(xPos, height * 0.25, -depth / 2 - 0.06);
+        sill.position.set(xPos, height * 0.55 - windowHeight / 2 - 0.02, -depth / 2 - 0.06);
         sill.castShadow = true;
         group.add(sill);
     }
@@ -235,64 +270,68 @@ function createRoom(width, depth, height, color, id, label, isUpperFloor) {
     // Left wall window (on front face of left wall)
     const sideFrameLeftGeom = new THREE.BoxGeometry(0.15, sideWindowHeight + 0.1, sideWindowWidth + 0.1);
     const sideFrameLeft = new THREE.Mesh(sideFrameLeftGeom, frameMaterial);
-    sideFrameLeft.position.set(-width / 2 - 0.08, height * 0.65, -depth / 2);
+    sideFrameLeft.position.set(-width / 2 - 0.08, height * 0.65, depth / 4);
     sideFrameLeft.castShadow = true;
     group.add(sideFrameLeft);
 
     const sideGlassLeftGeom = new THREE.BoxGeometry(0.08, sideWindowHeight, sideWindowWidth);
     const sideGlassLeft = new THREE.Mesh(sideGlassLeftGeom, windowMaterial);
-    sideGlassLeft.position.set(-width / 2 - 0.06, height * 0.65, -depth / 2);
+    sideGlassLeft.position.set(-width / 2 - 0.06, height * 0.65, depth / 4);
     group.add(sideGlassLeft);
 
     // Right wall window (on front face of right wall)
     const sideFrameRightGeom = new THREE.BoxGeometry(0.15, sideWindowHeight + 0.1, sideWindowWidth + 0.1);
     const sideFrameRight = new THREE.Mesh(sideFrameRightGeom, frameMaterial);
-    sideFrameRight.position.set(width / 2 + 0.08, height * 0.65, -depth / 2);
+    sideFrameRight.position.set(width / 2 + 0.08, height * 0.65, depth / 4);
     sideFrameRight.castShadow = true;
     group.add(sideFrameRight);
 
     const sideGlassRightGeom = new THREE.BoxGeometry(0.08, sideWindowHeight, sideWindowWidth);
     const sideGlassRight = new THREE.Mesh(sideGlassRightGeom, windowMaterial);
-    sideGlassRight.position.set(width / 2 + 0.06, height * 0.65, -depth / 2);
+    sideGlassRight.position.set(width / 2 + 0.06, height * 0.65, depth / 4);
     group.add(sideGlassRight);
 
-    // Door (only on lower floor, left side)
+    // Door (only on lower floor, left side of back wall)
     if (!isUpperFloor) {
         const doorFrameMaterial = new THREE.MeshStandardMaterial({
             color: 0x5a3a2a,
             roughness: 0.55,
             metalness: 0.05,
         });
-        
+
         const doorKnobMaterial = new THREE.MeshStandardMaterial({
             color: 0xd4af37,
             roughness: 0.2,
             metalness: 0.9,
         });
-        
-        // Door frame (robust wooden frame)
-        const doorFrameGeom = new THREE.BoxGeometry(0.08, 1.0, 0.12);
+
+        // Door centered on back wall near left side, starting from floor
+        const doorCenterX = -width / 2 + 0.375;
+        const doorCenterY = 0.475; // door spans y=0 to y=0.95
+
+        // Door frame (surrounding box embedded in back wall)
+        const doorFrameGeom = new THREE.BoxGeometry(0.77, 1.05, 0.06);
         const doorFrame = new THREE.Mesh(doorFrameGeom, doorFrameMaterial);
-        doorFrame.position.set(-width / 2 - 0.06, height / 2, -depth / 2);
+        doorFrame.position.set(doorCenterX, doorCenterY, -depth / 2 + 0.02);
         doorFrame.castShadow = true;
         group.add(doorFrame);
-        
+
         // Door panel (wooden door)
-        const doorPanelGeom = new THREE.BoxGeometry(0.65, 0.95, 0.04);
+        const doorPanelGeom = new THREE.BoxGeometry(0.65, 0.95, 0.05);
         const doorPanelMat = new THREE.MeshStandardMaterial({
             color: 0x8b6f47,
             roughness: 0.45,
             metalness: 0.02,
         });
         const doorPanel = new THREE.Mesh(doorPanelGeom, doorPanelMat);
-        doorPanel.position.set(-width / 2 + 0.22, height / 2 - 0.025, -depth / 2 + 0.06);
+        doorPanel.position.set(doorCenterX, doorCenterY, -depth / 2 + 0.07);
         doorPanel.castShadow = true;
         group.add(doorPanel);
-        
-        // Door knob (brass)
+
+        // Door knob (brass) on right side of door
         const knobGeom = new THREE.SphereGeometry(0.06, 12, 12);
         const knob = new THREE.Mesh(knobGeom, doorKnobMaterial);
-        knob.position.set(-width / 2 + 0.35, height / 2 - 0.15, -depth / 2 + 0.1);
+        knob.position.set(doorCenterX + 0.22, doorCenterY, -depth / 2 + 0.11);
         knob.castShadow = true;
         group.add(knob);
 
@@ -304,7 +343,7 @@ function createRoom(width, depth, height, color, id, label, isUpperFloor) {
             metalness: 0.7,
         });
         const lockPlate = new THREE.Mesh(lockPlateGeom, lockPlateMat);
-        lockPlate.position.set(-width / 2 + 0.32, height / 2, -depth / 2 + 0.08);
+        lockPlate.position.set(doorCenterX + 0.22, doorCenterY, -depth / 2 + 0.10);
         group.add(lockPlate);
     }
 
@@ -371,9 +410,10 @@ function createRoof(width, depth) {
         roofWidth/2, 0, roofDepth/2,     // right back bottom
     ]);
     
+    const rightSlopeIdx = new Uint16Array([0, 1, 2, 1, 3, 2]);
     const rightSlopeGeom = new THREE.BufferGeometry();
     rightSlopeGeom.setAttribute('position', new THREE.BufferAttribute(rightSlopeVerts, 3));
-    rightSlopeGeom.setIndex(new THREE.BufferAttribute(leftSlopeIdx, 1));
+    rightSlopeGeom.setIndex(new THREE.BufferAttribute(rightSlopeIdx, 1));
     rightSlopeGeom.computeVertexNormals();
     
     const rightSlope = new THREE.Mesh(rightSlopeGeom, roofMaterial);
@@ -452,7 +492,7 @@ function createRoof(width, depth) {
         side: THREE.DoubleSide,
     });
     
-    const ridgeGeom = new THREE.BoxGeometry(roofWidth + 0.2, 0.2, 0.3);
+    const ridgeGeom = new THREE.BoxGeometry(0.3, 0.15, roofDepth + 0.2);
     const ridge = new THREE.Mesh(ridgeGeom, ridgeMaterial);
     ridge.position.set(0, pitch, 0);
     ridge.castShadow = true;
@@ -472,7 +512,7 @@ function createRoof(width, depth) {
     chimneyPositions.forEach(xPos => {
         const chimneyGeom = new THREE.BoxGeometry(0.32, 1.1, 0.32);
         const chimney = new THREE.Mesh(chimneyGeom, chimneyBrickMaterial);
-        chimney.position.set(xPos, pitch * 0.55, 0);
+        chimney.position.set(xPos, 0.95, 0);
         chimney.castShadow = true;
         chimney.receiveShadow = true;
         group.add(chimney);
@@ -484,7 +524,7 @@ function createRoof(width, depth) {
             side: THREE.DoubleSide,
         });
         const pot = new THREE.Mesh(potGeom, potMaterial);
-        pot.position.set(xPos, pitch + 0.5, 0);
+        pot.position.set(xPos, 1.61, 0);
         pot.castShadow = true;
         pot.receiveShadow = true;
         group.add(pot);
@@ -497,7 +537,7 @@ function createRoof(width, depth) {
             side: THREE.DoubleSide,
         });
         const cap = new THREE.Mesh(capGeom, capMaterial);
-        cap.position.set(xPos, pitch + 0.65, 0);
+        cap.position.set(xPos, 1.77, 0);
         cap.castShadow = true;
         cap.receiveShadow = true;
         group.add(cap);
@@ -871,7 +911,7 @@ function initScene3D() {
         metalness: 0.02,
     });
 
-    const gateGeom = new THREE.BoxGeometry(0.9, 1.2, 0.08);
+    const gateGeom = new THREE.BoxGeometry(0.08, 1.2, 0.9);
     const gate = new THREE.Mesh(gateGeom, gateDoorMaterial);
     gate.position.set(-2.6, 0.6, 1.2);
     gate.castShadow = true;
@@ -885,7 +925,7 @@ function initScene3D() {
         metalness: 0.08,
     });
 
-    const gateFrameGeom = new THREE.BoxGeometry(1.0, 1.35, 0.12);
+    const gateFrameGeom = new THREE.BoxGeometry(0.12, 1.35, 1.0);
     const gateFrame = new THREE.Mesh(gateFrameGeom, gateFrameMaterial);
     gateFrame.position.set(-2.6, 0.6, 1.2);
     gateFrame.castShadow = true;
@@ -901,14 +941,14 @@ function initScene3D() {
     });
     const hingeLeft = new THREE.Mesh(hingeGeom, hingeMaterial);
     hingeLeft.rotation.z = Math.PI / 2;
-    hingeLeft.position.set(-3.05, 1.0, 1.2);
+    hingeLeft.position.set(-2.6, 1.0, 0.75);
     hingeLeft.castShadow = true;
     scene.add(hingeLeft);
 
     // Gate hinge detail (bottom)
     const hingeBottom = new THREE.Mesh(hingeGeom, hingeMaterial);
     hingeBottom.rotation.z = Math.PI / 2;
-    hingeBottom.position.set(-3.05, 0.2, 1.2);
+    hingeBottom.position.set(-2.6, 0.2, 0.75);
     hingeBottom.castShadow = true;
     scene.add(hingeBottom);
 
@@ -920,7 +960,7 @@ function initScene3D() {
         metalness: 0.7,
     });
     const gateHandle = new THREE.Mesh(gateHandleGeom, gateHandleMaterial);
-    gateHandle.position.set(-2.1, 0.6, 1.28);
+    gateHandle.position.set(-2.56, 0.6, 1.64);
     gateHandle.castShadow = true;
     scene.add(gateHandle);
 

@@ -1,5 +1,30 @@
 const API_BASE = '/api';
 
+const MOCK_NODES = [
+    {
+        id: 'Sensor:s1',
+        temperature: 21.4,
+        luminosity: 340,
+        barometricPressure: 1013.2,
+        humidity: 58,
+        accelerationMagnitude: 0.02,
+    },
+    {
+        id: 'Sensor:s2',
+        temperature: 19.8,
+        luminosity: 120,
+        humidity: 62,
+        nfcDetected: false,
+    },
+    {
+        id: 'Sensor:s3',
+        temperature: 14.1,
+        luminosity: 8500,
+        barometricPressure: 1012.8,
+        bleDevicesNearby: 3,
+    },
+];
+
 // Utility
 function formatDate(isoString) {
     if (!isoString) return '--';
@@ -15,43 +40,176 @@ function updateLastUpdate() {
 // ---------------- Dashboard ----------------
 let dashboardNodesData = [];
 let selectedNodeId = null;
+let viewMode = '3d';
+let visibleNodes = new Set();
+
+const NODE_NAMES = { s1: 'Salón', s2: 'Dormitorio', s3: 'Exterior' };
+const NODE_COLORS = { s1: '#f59e0b', s2: '#818cf8', s3: '#059669' };
 
 async function fetchNodos() {
-    if (!document.getElementById('dashboard-split')) return;
+    if (!document.getElementById('dashboard-split') && !document.getElementById('all-nodes-view')) return;
     try {
         const res = await fetch(`${API_BASE}/nodos`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         dashboardNodesData = await res.json();
-        
-        update3DModel();
-        
+        document.querySelector('.dot').style.backgroundColor = 'var(--success)';
+    } catch (e) {
+        console.warn('API no disponible, usando datos de prueba:', e.message);
+        dashboardNodesData = MOCK_NODES;
+        document.getElementById('last-update').innerText = 'Modo demo (sin API)';
+        document.querySelector('.dot').style.backgroundColor = 'var(--warning)';
+    }
+
+    // Inicializar nodos visibles la primera vez
+    if (visibleNodes.size === 0) {
+        dashboardNodesData.forEach(n => visibleNodes.add(n.id.replace('Sensor:', '')));
+    }
+
+    update3DModel();
+    renderNodeSelectorBar();
+
+    if (viewMode === 'cards') {
+        renderAllNodes();
+    } else {
         if (selectedNodeId) {
             renderNodeDetails(selectedNodeId);
-        } else {
-            // Select Salon by default if available
-            if (dashboardNodesData.find(n => n.id === 'Sensor:s1')) {
-                selectNode('s1');
-            }
+        } else if (dashboardNodesData.find(n => n.id === 'Sensor:s1')) {
+            selectNode('s1');
         }
-        updateLastUpdate();
-    } catch (e) {
-        console.error('Error fetching nodos:', e);
-        document.getElementById('last-update').innerText = 'Error de conexión';
-        document.querySelector('.dot').style.backgroundColor = 'var(--danger)';
     }
+
+    if (dashboardNodesData !== MOCK_NODES) updateLastUpdate();
 }
 
 function selectNode(id) {
     selectedNodeId = `Sensor:${id}`;
-    
-    // Highlight room in 3D model
+
     document.querySelectorAll('.room').forEach(el => el.classList.remove('active'));
     const roomEl = document.getElementById(`room-${id}`);
     if (roomEl) roomEl.classList.add('active');
     if (typeof window.highlightRoom3D === 'function') {
         window.highlightRoom3D(id);
     }
-    
+
     renderNodeDetails(selectedNodeId);
+    renderNodeSelectorBar();
+}
+
+function setViewMode(mode) {
+    viewMode = mode;
+    document.getElementById('btn-view-3d').classList.toggle('active', mode === '3d');
+    document.getElementById('btn-view-cards').classList.toggle('active', mode === 'cards');
+
+    const split = document.getElementById('dashboard-split');
+    const allNodes = document.getElementById('all-nodes-view');
+    if (split) split.classList.toggle('hidden', mode === 'cards');
+    if (allNodes) allNodes.classList.toggle('hidden', mode !== 'cards');
+
+    renderNodeSelectorBar();
+    if (mode === 'cards') renderAllNodes();
+}
+
+function renderNodeSelectorBar() {
+    const bar = document.getElementById('node-selector-bar');
+    if (!bar || dashboardNodesData.length === 0) return;
+
+    if (viewMode === '3d') {
+        bar.innerHTML = `<span class="selector-label">Nodo activo:</span>` +
+            dashboardNodesData.map(n => {
+                const id = n.id.replace('Sensor:', '');
+                const name = NODE_NAMES[id] || id;
+                const dot = NODE_COLORS[id] || 'var(--accent)';
+                const isActive = `Sensor:${id}` === selectedNodeId;
+                return `<button class="node-pill ${isActive ? 'active' : ''}" style="${isActive ? `background:${dot};border-color:${dot}` : ''}" onclick="selectNode('${id}')">
+                    <span class="np-dot" style="background:${dot}"></span>${name}
+                </button>`;
+            }).join('');
+    } else {
+        bar.innerHTML = `<span class="selector-label">Mostrar nodos:</span>` +
+            dashboardNodesData.map(n => {
+                const id = n.id.replace('Sensor:', '');
+                const name = NODE_NAMES[id] || id;
+                const dot = NODE_COLORS[id] || 'var(--accent)';
+                const isVisible = visibleNodes.has(id);
+                return `<button class="node-pill ${isVisible ? 'active' : ''}" style="${isVisible ? `background:${dot};border-color:${dot}` : ''}" onclick="toggleNodeFilter('${id}')">
+                    <span class="np-dot" style="background:${isVisible ? 'white' : dot}"></span>${name}
+                </button>`;
+            }).join('');
+    }
+}
+
+function toggleNodeFilter(id) {
+    if (visibleNodes.has(id)) {
+        if (visibleNodes.size > 1) visibleNodes.delete(id);
+    } else {
+        visibleNodes.add(id);
+    }
+    renderNodeSelectorBar();
+    renderAllNodes();
+}
+
+function renderAllNodes() {
+    const container = document.getElementById('all-nodes-view');
+    if (!container) return;
+
+    const nodes = dashboardNodesData.filter(n => visibleNodes.has(n.id.replace('Sensor:', '')));
+    if (nodes.length === 0) {
+        container.innerHTML = '<div class="empty-state">Selecciona al menos un nodo para mostrar.</div>';
+        return;
+    }
+    container.innerHTML = `<div class="all-nodes-grid">${nodes.map(renderNodeCard).join('')}</div>`;
+}
+
+function renderNodeCard(n) {
+    const id = n.id.replace('Sensor:', '');
+    const name = NODE_NAMES[id] || id;
+    const accentColor = NODE_COLORS[id] || 'var(--accent)';
+    const online = !!n.temperature;
+
+    let extraHTML = '';
+    if (id === 's1') {
+        extraHTML = `
+            <div class="nc-sensor"><span class="sensor-label">Presión</span><span class="sensor-value">${n.barometricPressure || '--'} hPa</span></div>
+            <div class="nc-sensor"><span class="sensor-label">Humedad</span><span class="sensor-value">${n.humidity || '--'} %</span></div>
+            <div class="nc-sensor nc-sensor--wide"><span class="sensor-label">Vibración</span><span class="sensor-value">${n.accelerationMagnitude || '--'} g</span></div>
+        `;
+    } else if (id === 's2') {
+        extraHTML = `
+            <div class="nc-sensor"><span class="sensor-label">Humedad</span><span class="sensor-value">${n.humidity || '--'} %</span></div>
+            <div class="nc-sensor"><span class="sensor-label">NFC</span><span class="sensor-value" style="font-size:0.9rem">${n.nfcDetected ? 'Detectado' : 'En espera'}</span></div>
+        `;
+    } else if (id === 's3') {
+        extraHTML = `
+            <div class="nc-sensor"><span class="sensor-label">Presión</span><span class="sensor-value">${n.barometricPressure || '--'} hPa</span></div>
+            <div class="nc-sensor"><span class="sensor-label">Disp. BLE</span><span class="sensor-value">${n.bleDevicesNearby || '0'}</span></div>
+        `;
+    }
+
+    return `
+        <div class="node-card slide-in" style="--nc-accent:${accentColor}">
+            <div class="node-card-accent-bar"></div>
+            <div class="card-header" style="padding-bottom:0.75rem; margin-bottom:0.75rem;">
+                <div>
+                    <h2 class="card-title" style="font-size:1.25rem">${name}</h2>
+                    <div style="font-size:0.78rem; color:var(--text-muted); margin-top:0.15rem;">Nodo: ${id}</div>
+                </div>
+                <span class="badge ${online ? 'good' : 'warn'}">${online ? 'En línea' : 'Sin datos'}</span>
+            </div>
+            <div class="nc-sensors-grid">
+                <div class="nc-sensor"><span class="sensor-label">Temperatura</span><span class="sensor-value">${n.temperature || '--'} °C</span></div>
+                <div class="nc-sensor"><span class="sensor-label">Luminosidad</span><span class="sensor-value">${n.luminosity || '--'} lx</span></div>
+                ${extraHTML}
+            </div>
+            <div class="nc-controls">
+                <span class="sensor-label" style="display:block; margin-bottom:0.5rem;">Iluminación inteligente</span>
+                <div style="display:flex; gap:0.5rem; align-items:center;">
+                    <input type="color" id="color-${id}" value="#ffbb00" style="width:52px; height:36px; padding:2px; border-radius:6px; cursor:pointer;" title="Color">
+                    <button class="btn-primary" onclick="sendColor('${id}')" style="flex:1; height:36px; font-size:0.8rem;">Aplicar color</button>
+                    <button class="btn-secondary" onclick="sendBlink('${id}')" style="height:36px; font-size:0.8rem;">Parpadear</button>
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 function update3DModel() {
