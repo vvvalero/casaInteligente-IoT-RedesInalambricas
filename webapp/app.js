@@ -444,6 +444,26 @@ async function fetchAlertas() {
     }
 }
 
+// ---------------- Mobile Sidebar ----------------
+function toggleSidebar() {
+    document.body.classList.toggle('sidebar-open');
+}
+
+function closeSidebar() {
+    document.body.classList.remove('sidebar-open');
+}
+
+// Close sidebar when a nav link is clicked on mobile
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.sidebar a').forEach(a => {
+        a.addEventListener('click', closeSidebar);
+    });
+    // Close on resize to desktop
+    window.addEventListener('resize', () => {
+        if (window.innerWidth > 768) closeSidebar();
+    });
+});
+
 // ---------------- Estado ----------------
 async function fetchStatus() {
     if (!document.getElementById('api-status')) return;

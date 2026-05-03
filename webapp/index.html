@@ -8,6 +8,7 @@
 </head>
 <body>
     <div class="app-container">
+        <div class="sidebar-overlay" onclick="closeSidebar()"></div>
         <aside class="sidebar">
             <h2>
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -22,20 +23,26 @@
                 <a href="alertas.html">Alertas</a>
                 <a href="estado.html">Estado del Sistema</a>
             </nav>
+            <button class="sidebar-close" onclick="closeSidebar()" aria-label="Cerrar menú">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
         </aside>
         
         <main class="content">
             <header>
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Menú">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
                 <h1>Dashboard Interactivo</h1>
                 <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
                     <div class="view-toggle-group">
                         <button class="view-btn active" id="btn-view-3d" onclick="setViewMode('3d')" title="Vista con modelo 3D">
                             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-                            Modelo 3D
+                            <span class="view-btn-text">Modelo 3D</span>
                         </button>
                         <button class="view-btn" id="btn-view-cards" onclick="setViewMode('cards')" title="Vista de tarjetas resumidas">
                             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                            Vista Resumen
+                            <span class="view-btn-text">Vista Resumen</span>
                         </button>
                     </div>
                     <div id="status-indicator" class="status-indicator">
