@@ -1,0 +1,78 @@
+# smarthome.conf — Virtual host Casa Inteligente IoT
+# Dominio: api.vvalero.dev
+# Webapp estática + API REST + Webhook TTN en una sola URL
+
+# -------------------------------------------------------
+# HTTP — solo ACME challenge + redirección a HTTPS
+# -------------------------------------------------------
+server {
+    listen 80;
+    server_name api.vvalero.dev;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# -------------------------------------------------------
+# HTTPS
+# -------------------------------------------------------
+server {
+    listen 443 ssl;
+    server_name api.vvalero.dev;
+
+    ssl_certificate     /etc/letsencrypt/live/api.vvalero.dev/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.vvalero.dev/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    add_header Strict-Transport-Security "max-age=63072000" always;
+    add_header X-Frame-Options DENY;
+    add_header X-Content-Type-Options nosniff;
+
+    # ---- Webhook TTN → IoT Agent ----
+    location /iot/ul {
+        proxy_pass         http://iot-agent:4041/iot/ul;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout    30s;
+    }
+
+    # ---- API REST → notification_server ----
+    # proxy_pass sin URI path para que /api/nodos llegue a Flask como /api/nodos
+    location /api/ {
+        proxy_pass         http://notification-server:5000;
+        proxy_http_version 1.1;
+        proxy_set_header   Host            $host;
+        proxy_set_header   X-Real-IP       $remote_addr;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout    30s;
+    }
+
+    # ---- Health check ----
+    location /health {
+        proxy_pass         http://notification-server:5000/health;
+        proxy_http_version 1.1;
+        proxy_set_header   Host $host;
+    }
+
+    # ---- Webapp estática ----
+    location / {
+        root  /var/www/html;
+        index index.html;
+        try_files $uri $uri/ =404;
+    }
+}
