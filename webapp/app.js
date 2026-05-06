@@ -171,7 +171,7 @@ function renderNodeCard(n) {
         extraHTML = `
             <div class="nc-sensor"><span class="sensor-label">Presión</span><span class="sensor-value">${n.barometricPressure || '--'} hPa</span></div>
             <div class="nc-sensor"><span class="sensor-label">Humedad</span><span class="sensor-value">${n.humidity || '--'} %</span></div>
-            <div class="nc-sensor nc-sensor--wide"><span class="sensor-label">Vibración</span><span class="sensor-value">${n.accelerationMagnitude || '--'} g</span></div>
+            <div class="nc-sensor nc-sensor--wide"><span class="sensor-label">Vibración</span><span class="sensor-value">${n.accelerationMagnitude != null ? Number(n.accelerationMagnitude).toFixed(3) : '--'} g</span></div>
         `;
     } else if (id === 's2') {
         extraHTML = `
@@ -241,7 +241,7 @@ function renderNodeDetails(sensorId) {
         extraHTML = `
             <div class="sensor-item"><span class="sensor-label">Presión Atmosférica</span><span class="sensor-value">${n.barometricPressure || '--'} hPa</span></div>
             <div class="sensor-item"><span class="sensor-label">Humedad Relativa</span><span class="sensor-value">${n.humidity || '--'} %</span></div>
-            <div class="sensor-item"><span class="sensor-label">Vibración (Seguridad)</span><span class="sensor-value">${n.accelerationMagnitude || '--'} g</span></div>
+            <div class="sensor-item"><span class="sensor-label">Vibración (Seguridad)</span><span class="sensor-value">${n.accelerationMagnitude != null ? Number(n.accelerationMagnitude).toFixed(3) : '--'} g</span></div>
         `;
     } else if (id === 's2') {
         extraHTML = `

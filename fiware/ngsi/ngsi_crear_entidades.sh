@@ -44,7 +44,17 @@ _post "Sensor:s1" '{
   "id":"Sensor:s1","type":"Sensor",
   "name":{"type":"Text","value":"Nodo Salon"},
   "refRoom":{"type":"Relationship","value":"urn:ngsi-ld:Room:salon"},
-  "nodeType":{"type":"Text","value":"salon"}
+  "nodeType":{"type":"Text","value":"salon"},
+  "temperature":{"type":"Number","value":0},
+  "humidity":{"type":"Number","value":0},
+  "luminosity":{"type":"Number","value":0},
+  "barometricPressure":{"type":"Number","value":0},
+  "accelerationMagnitude":{"type":"Number","value":0},
+  "vibrationDetected":{"type":"Boolean","value":false},
+  "digitalInput":{"type":"Boolean","value":false},
+  "room":{"type":"Text","value":"salon"},
+  "roomId":{"type":"Number","value":1},
+  "timestamp":{"type":"DateTime","value":"1970-01-01T00:00:00Z"}
 }'
 
 # Sensor:s2 — Dormitorio (temp, hum, lux, NFC)
@@ -53,7 +63,15 @@ _post "Sensor:s2" '{
   "name":{"type":"Text","value":"Nodo Dormitorio"},
   "refRoom":{"type":"Relationship","value":"urn:ngsi-ld:Room:dormitorio"},
   "nodeType":{"type":"Text","value":"dormitorio"},
-  "nfcAuthorizedUIDs":{"type":"Text","value":"A1B2C3D4,DEADBEEF"}
+  "temperature":{"type":"Number","value":0},
+  "humidity":{"type":"Number","value":0},
+  "luminosity":{"type":"Number","value":0},
+  "nfcDetected":{"type":"Boolean","value":false},
+  "nfcUidPartial":{"type":"Number","value":0},
+  "nfcAuthorizedUIDs":{"type":"Text","value":"A1B2C3D4,DEADBEEF"},
+  "room":{"type":"Text","value":"dormitorio"},
+  "roomId":{"type":"Number","value":2},
+  "timestamp":{"type":"DateTime","value":"1970-01-01T00:00:00Z"}
 }'
 
 # Sensor:s3 — Exterior (temp, hum, presión, BLE)
@@ -62,7 +80,15 @@ _post "Sensor:s3" '{
   "name":{"type":"Text","value":"Nodo Exterior"},
   "refRoom":{"type":"Relationship","value":"urn:ngsi-ld:Room:exterior"},
   "nodeType":{"type":"Text","value":"exterior"},
-  "aforoMaximo":{"type":"Integer","value":5}
+  "temperature":{"type":"Number","value":0},
+  "humidity":{"type":"Number","value":0},
+  "barometricPressure":{"type":"Number","value":0},
+  "luminosity":{"type":"Number","value":0},
+  "bleDevicesNearby":{"type":"Number","value":0},
+  "aforoMaximo":{"type":"Integer","value":5},
+  "room":{"type":"Text","value":"exterior"},
+  "roomId":{"type":"Number","value":3},
+  "timestamp":{"type":"DateTime","value":"1970-01-01T00:00:00Z"}
 }'
 
 # ---- ALERTAS INICIALES (vacías, se actualizarán dinámicamente) ----

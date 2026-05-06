@@ -75,24 +75,18 @@ def _post_entity(entity):
 
 
 def _update_attrs(eid, datos):
-    """Crea o actualiza atributos en una entidad existente de Orion.
-    POST /attrs crea los que no existen y actualiza los que sí."""
-    attrs = {}
-    for k, v in datos.items():
-        if isinstance(v, bool):
-            attrs[k] = {"type": "Boolean", "value": v}
-        elif isinstance(v, (int, float)):
-            attrs[k] = {"type": "Number", "value": v}
-        elif isinstance(v, (dict, list)):
-            attrs[k] = {"type": "StructuredValue", "value": v}
-        else:
-            attrs[k] = {"type": "Text", "value": str(v)}
-    attrs["timestamp"] = {"type": "DateTime", "value": datetime.now(timezone.utc).isoformat()}
+    """Actualiza atributos escalares del sensor en Orion vía PATCH keyValues.
+    Los objetos anidados (accelerometer xyz) se omiten; solo se usan los escalares."""
+    attrs = {k: v for k, v in datos.items() if not isinstance(v, (dict, list))}
+    attrs["timestamp"] = datetime.now(timezone.utc).isoformat()
     try:
-        r = requests.post(
-            f"{ORION}/v2/entities/{eid}/attrs",
+        r = requests.patch(
+            f"{ORION}/v2/entities/{eid}/attrs?options=keyValues",
             json=attrs, headers=FS_HEADERS, timeout=5)
-        logging.info(f"UPDATE {eid} → {r.status_code}")
+        if r.status_code in (200, 204):
+            logging.info(f"UPDATE {eid} → {r.status_code}")
+        else:
+            logging.error(f"UPDATE {eid} → {r.status_code}: {r.text[:300]}")
     except Exception as e:
         logging.error(f"UPDATE error {eid}: {e}")
 
