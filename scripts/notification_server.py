@@ -278,6 +278,63 @@ def notify():
     return jsonify({"status": "ok"}), 200
 
 
+@app.route("/iot/ul", methods=["POST"])
+def iot_webhook():
+    """Webhook para TTN uplinks — procesa datos de LoRaWAN y actualiza Orion"""
+    payload = request.get_json(force=True, silent=True)
+    if not payload:
+        return jsonify({"error": "payload vacío"}), 400
+
+    try:
+        # Extraer device_id desde TTN webhook format
+        device_id = payload.get("end_device_ids", {}).get("device_id", "")
+        if not device_id:
+            logging.warning("No device_id en webhook TTN")
+            return jsonify({"error": "missing device_id"}), 400
+
+        # Mapear device_id (ej. "lopy4-salon") a sensor (ej. "Sensor:s1")
+        sensor_map = {v: k for k, v in SENSOR_TO_TTN.items()}
+        sensor_id = sensor_map.get(device_id)
+        if not sensor_id:
+            logging.warning(f"Device {device_id} no mapea a sensor conocido")
+            return jsonify({"error": f"unknown device: {device_id}"}), 400
+
+        # Extraer datos decodificados del uplink
+        uplink = payload.get("uplink_message", {})
+        datos = uplink.get("decoded_payload", {})
+        if not datos:
+            logging.info(f"Sin decoded_payload para {sensor_id}")
+            return jsonify({"status": "ok, no decoded payload"}), 200
+
+        logging.info(f"TTN uplink {sensor_id}: {datos}")
+
+        # Actualizar entidad en Orion con todos los datos
+        atributos = {k: {"type": "Number", "value": v} if isinstance(v, (int, float))
+                     else {"type": "Boolean", "value": v} if isinstance(v, bool)
+                     else {"type": "Text", "value": str(v)}
+                     for k, v in datos.items()}
+
+        _post_entity({
+            "id": sensor_id,
+            "type": "Sensor",
+            **atributos,
+            "timestamp": {"type": "DateTime", "value": datetime.now(timezone.utc).isoformat()}
+        })
+
+        # Aplicar reglas de automatización
+        for regla in TODAS_REGLAS:
+            try:
+                regla(datos, sensor_id)
+            except Exception as e:
+                logging.error(f"Error en regla {regla.__name__}: {e}")
+
+        return jsonify({"status": "ok"}), 200
+
+    except Exception as e:
+        logging.error(f"Error en /iot/ul: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({
