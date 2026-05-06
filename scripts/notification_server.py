@@ -9,7 +9,7 @@
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import requests, json, logging, base64, time, os
+import requests, json, logging, base64, time, os, re
 from datetime import datetime, timezone
 
 app = Flask(__name__)
@@ -76,8 +76,17 @@ def _post_entity(entity):
 
 def _update_attrs(eid, datos):
     """Actualiza atributos escalares del sensor en Orion vía PATCH keyValues.
-    Los objetos anidados (accelerometer xyz) se omiten; solo se usan los escalares."""
-    attrs = {k: v for k, v in datos.items() if not isinstance(v, (dict, list))}
+    Filtra objetos anidados y duplicados con sufijo de canal Cayenne LPP (_N)."""
+    attrs = {}
+    for k, v in datos.items():
+        if isinstance(v, (dict, list)):
+            continue
+        if k == "raw_hex":
+            continue
+        # Los sufijos _N son duplicados del decodificador Cayenne LPP (temperature_1, humidity_2…)
+        if re.search(r'_\d+$', k):
+            continue
+        attrs[k] = v
     attrs["timestamp"] = datetime.now(timezone.utc).isoformat()
     try:
         r = requests.patch(
