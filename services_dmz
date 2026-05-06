@@ -3,7 +3,7 @@
 # Dominio: api.vvalero.dev
 # Uso: ./services_dmz start | stop | status | reset | renew-cert | logs | rebuild
 
-COMPOSE="docker compose -f docker/docker-compose_dmz.yml"
+COMPOSE="docker compose -f docker/docker-compose_dmz.yml --env-file .env"
 
 case "$1" in
 

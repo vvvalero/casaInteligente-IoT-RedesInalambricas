@@ -308,17 +308,10 @@ def iot_webhook():
 
         logging.info(f"TTN uplink {sensor_id}: {datos}")
 
-        # Actualizar entidad en Orion con todos los datos
-        atributos = {k: {"type": "Number", "value": v} if isinstance(v, (int, float))
-                     else {"type": "Boolean", "value": v} if isinstance(v, bool)
-                     else {"type": "Text", "value": str(v)}
-                     for k, v in datos.items()}
-
-        _post_entity({
-            "id": sensor_id,
-            "type": "Sensor",
-            **atributos,
-            "timestamp": {"type": "DateTime", "value": datetime.now(timezone.utc).isoformat()}
+        # Actualizar entidad en Orion (entidades pre-inicializadas, usar PATCH)
+        _patch(sensor_id, {
+            **datos,
+            "timestamp": datetime.now(timezone.utc).isoformat()
         })
 
         # Aplicar reglas de automatización
