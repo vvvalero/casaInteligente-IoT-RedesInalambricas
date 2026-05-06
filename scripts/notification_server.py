@@ -74,6 +74,29 @@ def _post_entity(entity):
         logging.error(f"POST error: {e}")
 
 
+def _update_attrs(eid, datos):
+    """Crea o actualiza atributos en una entidad existente de Orion.
+    POST /attrs crea los que no existen y actualiza los que sí."""
+    attrs = {}
+    for k, v in datos.items():
+        if isinstance(v, bool):
+            attrs[k] = {"type": "Boolean", "value": v}
+        elif isinstance(v, (int, float)):
+            attrs[k] = {"type": "Number", "value": v}
+        elif isinstance(v, (dict, list)):
+            attrs[k] = {"type": "StructuredValue", "value": v}
+        else:
+            attrs[k] = {"type": "Text", "value": str(v)}
+    attrs["timestamp"] = {"type": "DateTime", "value": datetime.now(timezone.utc).isoformat()}
+    try:
+        r = requests.post(
+            f"{ORION}/v2/entities/{eid}/attrs",
+            json=attrs, headers=FS_HEADERS, timeout=5)
+        logging.info(f"UPDATE {eid} → {r.status_code}")
+    except Exception as e:
+        logging.error(f"UPDATE error {eid}: {e}")
+
+
 def _alerta(tipo, active, msg, severity, sid=""):
     _patch(f"Alert:{tipo}", {
         "active":    active,
@@ -308,11 +331,8 @@ def iot_webhook():
 
         logging.info(f"TTN uplink {sensor_id}: {datos}")
 
-        # Actualizar entidad en Orion (entidades pre-inicializadas, usar PATCH)
-        _patch(sensor_id, {
-            **datos,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        })
+        # Crear/actualizar atributos en Orion
+        _update_attrs(sensor_id, datos)
 
         # Aplicar reglas de automatización
         for regla in TODAS_REGLAS:
