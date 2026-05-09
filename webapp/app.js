@@ -37,6 +37,21 @@ function updateLastUpdate() {
     if (el) el.innerText = `Última actualización: ${new Date().toLocaleTimeString()}`;
 }
 
+function isNodeOnline(node) {
+    const OFFLINE_THRESHOLD = 30 * 60 * 1000; // 30 minutos en milisegundos
+
+    if (!node.temperature) return false;
+    if (!node.timestamp) return true; // Si no hay timestamp, asumir que está online
+
+    try {
+        const lastUpdate = new Date(node.timestamp).getTime();
+        const now = Date.now();
+        return (now - lastUpdate) < OFFLINE_THRESHOLD;
+    } catch {
+        return true; // Si hay error parsing, asumir online
+    }
+}
+
 // ---------------- Dashboard ----------------
 let dashboardNodesData = [];
 let selectedNodeId = null;
@@ -164,7 +179,7 @@ function renderNodeCard(n) {
     const id = n.id.replace('Sensor:', '');
     const name = NODE_NAMES[id] || id;
     const accentColor = NODE_COLORS[id] || 'var(--accent)';
-    const online = !!n.temperature;
+    const online = isNodeOnline(n);
 
     let extraHTML = '';
     if (id === 's1') {
@@ -218,7 +233,7 @@ function update3DModel() {
         const shortId = n.id.replace('Sensor:', '');
         const dot = document.querySelector(`#room-${shortId} .node-dot`);
         if (dot) {
-            dot.style.backgroundColor = n.temperature ? 'var(--success)' : 'var(--warning)';
+            dot.style.backgroundColor = isNodeOnline(n) ? 'var(--success)' : 'var(--warning)';
         }
     });
 }
@@ -262,7 +277,7 @@ function renderNodeDetails(sensorId) {
                     <h2 class="card-title" style="font-size: 1.5rem">${name}</h2>
                     <div style="font-size:0.875rem; color:var(--text-muted); margin-top: 0.25rem;">ID de nodo: ${id}</div>
                 </div>
-                <span class="badge ${n.temperature ? 'good' : 'warn'}">${n.temperature ? 'En línea' : 'Sin conexión'}</span>
+                <span class="badge ${isNodeOnline(n) ? 'good' : 'warn'}">${isNodeOnline(n) ? 'En línea' : 'Sin conexión'}</span>
             </div>
             <div class="sensor-grid" style="grid-template-columns: 1fr; gap: 1.5rem;">
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
