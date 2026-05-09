@@ -23,7 +23,7 @@ function generateBrickColorMap(w = 512, h = 512) {
     const brickH = h / 10;
     const mortarThickness = 4;
 
-    ctx.fillStyle = '#c47a45';
+    ctx.fillStyle = '#d89060';
     ctx.fillRect(0, 0, w, h);
 
     for (let y = 0; y < 10; y++) {
@@ -32,14 +32,14 @@ function generateBrickColorMap(w = 512, h = 512) {
             const posX = x * brickW + offset;
             const posY = y * brickH;
 
-            // Vary brick color
-            const variation = 0.8 + Math.random() * 0.2;
-            const hue = Math.floor(194 * variation);
-            ctx.fillStyle = `hsl(20, ${50 + Math.random() * 10}%, ${50 + (variation - 1) * 10}%)`;
+            // Vary brick color - warmer, more saturated
+            const variation = 0.75 + Math.random() * 0.35;
+            const hue = 20 + Math.random() * 15;
+            ctx.fillStyle = `hsl(${hue}, ${65 + Math.random() * 15}%, ${52 + (variation - 1) * 12}%)`;
             ctx.fillRect(posX, posY, brickW - mortarThickness, brickH - mortarThickness);
 
             // Highlight on brick
-            ctx.fillStyle = 'rgba(255,255,255,0.08)';
+            ctx.fillStyle = 'rgba(255,255,255,0.12)';
             ctx.fillRect(posX + 2, posY + 2, brickW - mortarThickness - 4, 3);
         }
     }
@@ -190,24 +190,25 @@ function generateWoodColorMap(w = 512, h = 512) {
     canvas.height = h;
     const ctx = canvas.getContext('2d');
 
-    ctx.fillStyle = '#8b6f47';
+    ctx.fillStyle = '#a0805d';
     ctx.fillRect(0, 0, w, h);
 
-    // Wood grain lines
+    // Wood grain lines - warmer with more variation
     for (let y = 0; y < h; y++) {
-        const noise = Math.sin(y * 0.02 + Math.random() * 0.5) * 3 + Math.random() * 2;
-        const brightness = 0.8 + Math.random() * 0.15;
-        ctx.fillStyle = `hsl(30, 40%, ${50 * brightness}%)`;
+        const noise = Math.sin(y * 0.02 + Math.random() * 0.5) * 4 + Math.random() * 3;
+        const brightness = 0.7 + Math.random() * 0.3;
+        const hue = 25 + Math.random() * 15;
+        ctx.fillStyle = `hsl(${hue}, 45%, ${48 * brightness}%)`;
         ctx.fillRect(0, y, w, 1);
     }
 
-    // Wood nodes (knots)
-    for (let i = 0; i < 8; i++) {
+    // Wood nodes (knots) - darker for contrast
+    for (let i = 0; i < 10; i++) {
         const x = Math.random() * w;
         const y = Math.random() * h;
-        const r = 10 + Math.random() * 15;
+        const r = 12 + Math.random() * 18;
 
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+        ctx.fillStyle = 'rgba(60, 35, 15, 0.25)';
         ctx.beginPath();
         ctx.ellipse(x, y, r, r * 0.7, Math.random() * Math.PI, 0, Math.PI * 2);
         ctx.fill();
@@ -257,7 +258,7 @@ function generateFloorTileColorMap(w = 512, h = 256) {
 
     const tileSize = w / 6;
 
-    ctx.fillStyle = '#c8a878';
+    ctx.fillStyle = '#d4b896';
     ctx.fillRect(0, 0, w, h);
 
     for (let y = 0; y < 4; y++) {
@@ -265,13 +266,14 @@ function generateFloorTileColorMap(w = 512, h = 256) {
             const posX = x * tileSize;
             const posY = y * tileSize;
 
-            // Tile color with variation
-            const variation = 0.95 + Math.random() * 0.1;
-            ctx.fillStyle = `hsl(35, 35%, ${60 * variation}%)`;
+            // Tile color with warm variation
+            const variation = 0.9 + Math.random() * 0.2;
+            const hue = 30 + Math.random() * 10;
+            ctx.fillStyle = `hsl(${hue}, 45%, ${62 * variation}%)`;
             ctx.fillRect(posX, posY, tileSize - 6, tileSize - 6);
 
-            // Grout lines
-            ctx.fillStyle = '#9a7a58';
+            // Grout lines - warmer
+            ctx.fillStyle = '#a88968';
             ctx.fillRect(posX + tileSize - 6, posY, 6, tileSize);
             ctx.fillRect(posX, posY + tileSize - 6, tileSize, 6);
         }
@@ -1007,8 +1009,8 @@ function initScene3D() {
     mountPoint.style.height = '100%';
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87CEEB);
-    scene.fog = new THREE.Fog(0x87CEEB, 35, 90);
+    scene.background = new THREE.Color(0xd4a894);
+    scene.fog = new THREE.Fog(0xd4a894, 35, 90);
 
     const width = mountPoint.clientWidth || 360;
     const height = mountPoint.clientHeight || 560;
@@ -1065,11 +1067,11 @@ function initScene3D() {
     controls.target.set(0, 1.5, 0);
     controls.update();
 
-    // Lighting for isometric view - softer and more natural
-    const hemisphere = new THREE.HemisphereLight(0x87CEEB, 0x4a7a4a, 0.6);
+    // Lighting for isometric view - warm and cozy
+    const hemisphere = new THREE.HemisphereLight(0xe8d5c4, 0x7a9a6a, 0.5);
     scene.add(hemisphere);
 
-    const sun = new THREE.DirectionalLight(0xffd27a, 2.2);
+    const sun = new THREE.DirectionalLight(0xffe8b6, 2.6);
     sun.position.set(8, 12, 6);
     sun.castShadow = true;
     sun.shadow.mapSize.width = 2048;
@@ -1085,11 +1087,11 @@ function initScene3D() {
     sun.shadow.normalBias = 0.02;
     scene.add(sun);
 
-    const fill = new THREE.DirectionalLight(0xa8d5ff, 0.7);
+    const fill = new THREE.DirectionalLight(0xf0b090, 0.9);
     fill.position.set(-7, 6, -9);
     scene.add(fill);
 
-    const rim = new THREE.DirectionalLight(0x8ab4d8, 0.5);
+    const rim = new THREE.DirectionalLight(0xd4a574, 0.6);
     rim.position.set(-6, 8, -10);
     scene.add(rim);
 
@@ -1146,24 +1148,24 @@ function initScene3D() {
     scene.add(houseGroup);
 
     // Interior lights (PointLights inside rooms)
-    // Salón — warm ceiling light
-    const salonLight = new THREE.PointLight(0xffcc77, 1.2, 4.0);
+    // Salón — warm golden ceiling light
+    const salonLight = new THREE.PointLight(0xffd580, 1.6, 4.5);
     salonLight.position.set(0, 1.6, -0.5);
     salonLight.castShadow = false;
     scene.add(salonLight);
 
-    // Dormitorio — warm/neutral ceiling light
-    const dormLight = new THREE.PointLight(0xffdda0, 0.9, 4.0);
+    // Dormitorio — warm/golden ceiling light
+    const dormLight = new THREE.PointLight(0xffc880, 1.2, 4.5);
     dormLight.position.set(0, 3.6, -0.5);
     dormLight.castShadow = false;
     scene.add(dormLight);
 
     // Window glow lights (simulate light coming from inside through windows)
-    const winGlowLow = new THREE.PointLight(0xffa050, 0.5, 2.5);
+    const winGlowLow = new THREE.PointLight(0xffa060, 0.8, 3.0);
     winGlowLow.position.set(0, 1.1, -1.7);
     scene.add(winGlowLow);
 
-    const winGlowHigh = new THREE.PointLight(0xffa050, 0.4, 2.0);
+    const winGlowHigh = new THREE.PointLight(0xffa060, 0.6, 2.5);
     winGlowHigh.position.set(0, 3.0, -1.7);
     scene.add(winGlowHigh);
 
