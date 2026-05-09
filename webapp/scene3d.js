@@ -7,6 +7,352 @@ const ROOM_COLORS = {
     s3: 0x2d8a5c,
 };
 
+// Texture cache to avoid regenerating the same textures
+const textureCache = {};
+
+// Procedural texture generation functions
+function generateBrickColorMap(w = 512, h = 512) {
+    if (textureCache['brick-color']) return textureCache['brick-color'];
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+
+    const brickW = w / 8;
+    const brickH = h / 10;
+    const mortarThickness = 4;
+
+    ctx.fillStyle = '#c47a45';
+    ctx.fillRect(0, 0, w, h);
+
+    for (let y = 0; y < 10; y++) {
+        const offset = (y % 2) * (brickW / 2);
+        for (let x = 0; x < 10; x++) {
+            const posX = x * brickW + offset;
+            const posY = y * brickH;
+
+            // Vary brick color
+            const variation = 0.8 + Math.random() * 0.2;
+            const hue = Math.floor(194 * variation);
+            ctx.fillStyle = `hsl(20, ${50 + Math.random() * 10}%, ${50 + (variation - 1) * 10}%)`;
+            ctx.fillRect(posX, posY, brickW - mortarThickness, brickH - mortarThickness);
+
+            // Highlight on brick
+            ctx.fillStyle = 'rgba(255,255,255,0.08)';
+            ctx.fillRect(posX + 2, posY + 2, brickW - mortarThickness - 4, 3);
+        }
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearMipMapLinearFilter;
+    texture.repeat.set(2, 2);
+    textureCache['brick-color'] = texture;
+    return texture;
+}
+
+function generateBrickNormalMap(w = 512, h = 512) {
+    if (textureCache['brick-normal']) return textureCache['brick-normal'];
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+
+    const brickW = w / 8;
+    const brickH = h / 10;
+    const mortarThickness = 4;
+
+    // Base normal (facing forward)
+    ctx.fillStyle = 'rgb(128, 128, 255)';
+    ctx.fillRect(0, 0, w, h);
+
+    for (let y = 0; y < 10; y++) {
+        const offset = (y % 2) * (brickW / 2);
+        for (let x = 0; x < 10; x++) {
+            const posX = x * brickW + offset;
+            const posY = y * brickH;
+
+            // Mortar joints (inset)
+            ctx.fillStyle = 'rgb(100, 100, 200)';
+            // Right edge
+            ctx.fillRect(posX + brickW - mortarThickness, posY, mortarThickness, brickH);
+            // Bottom edge
+            ctx.fillRect(posX, posY + brickH - mortarThickness, brickW, mortarThickness);
+
+            // Highlight (edges curving upward)
+            ctx.fillStyle = 'rgb(140, 140, 255)';
+            ctx.fillRect(posX + 2, posY + 2, brickW - mortarThickness - 4, 2);
+        }
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearMipMapLinearFilter;
+    texture.repeat.set(2, 2);
+    textureCache['brick-normal'] = texture;
+    return texture;
+}
+
+function generateRoofTileColorMap(w = 512, h = 512) {
+    if (textureCache['roof-tile-color']) return textureCache['roof-tile-color'];
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#6b3d25';
+    ctx.fillRect(0, 0, w, h);
+
+    const tileW = w / 6;
+    const tileH = h / 8;
+
+    for (let y = 0; y < 10; y++) {
+        const offset = (y % 2) * (tileW / 2);
+        for (let x = 0; x < 10; x++) {
+            const posX = x * tileW + offset;
+            const posY = y * tileH;
+
+            // Tile base color with variation
+            const variation = 0.9 + Math.random() * 0.15;
+            ctx.fillStyle = `hsl(15, 70%, ${35 * variation}%)`;
+            ctx.fillRect(posX, posY, tileW - 2, tileH);
+
+            // Shadow at bottom of tile
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.fillRect(posX, posY + tileH - 3, tileW - 2, 3);
+
+            // Highlight at top
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.fillRect(posX, posY, tileW - 2, 2);
+        }
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearMipMapLinearFilter;
+    texture.repeat.set(3, 4);
+    textureCache['roof-tile-color'] = texture;
+    return texture;
+}
+
+function generateRoofTileNormalMap(w = 512, h = 512) {
+    if (textureCache['roof-tile-normal']) return textureCache['roof-tile-normal'];
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = 'rgb(128, 128, 255)';
+    ctx.fillRect(0, 0, w, h);
+
+    const tileW = w / 6;
+    const tileH = h / 8;
+
+    for (let y = 0; y < 10; y++) {
+        const offset = (y % 2) * (tileW / 2);
+        for (let x = 0; x < 10; x++) {
+            const posX = x * tileW + offset;
+            const posY = y * tileH;
+
+            // Curved surface (side edges pointing outward)
+            for (let i = 0; i < tileW - 2; i++) {
+                const intensity = Math.abs((tileW / 2 - i) / (tileW / 2)) * 20;
+                const rVal = Math.min(255, 128 + intensity);
+                ctx.fillStyle = `rgb(${rVal}, 128, 255)`;
+                ctx.fillRect(posX + i, posY, 1, tileH);
+            }
+
+            // Shadow at bottom
+            ctx.fillStyle = 'rgb(100, 100, 200)';
+            ctx.fillRect(posX, posY + tileH - 2, tileW - 2, 2);
+        }
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(3, 4);
+    textureCache['roof-tile-normal'] = texture;
+    return texture;
+}
+
+function generateWoodColorMap(w = 512, h = 512) {
+    if (textureCache['wood-color']) return textureCache['wood-color'];
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#8b6f47';
+    ctx.fillRect(0, 0, w, h);
+
+    // Wood grain lines
+    for (let y = 0; y < h; y++) {
+        const noise = Math.sin(y * 0.02 + Math.random() * 0.5) * 3 + Math.random() * 2;
+        const brightness = 0.8 + Math.random() * 0.15;
+        ctx.fillStyle = `hsl(30, 40%, ${50 * brightness}%)`;
+        ctx.fillRect(0, y, w, 1);
+    }
+
+    // Wood nodes (knots)
+    for (let i = 0; i < 8; i++) {
+        const x = Math.random() * w;
+        const y = Math.random() * h;
+        const r = 10 + Math.random() * 15;
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+        ctx.beginPath();
+        ctx.ellipse(x, y, r, r * 0.7, Math.random() * Math.PI, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearMipMapLinearFilter;
+    texture.repeat.set(1, 2);
+    textureCache['wood-color'] = texture;
+    return texture;
+}
+
+function generateWoodNormalMap(w = 512, h = 512) {
+    if (textureCache['wood-normal']) return textureCache['wood-normal'];
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = 'rgb(128, 128, 255)';
+    ctx.fillRect(0, 0, w, h);
+
+    // Subtle wood grain normals
+    for (let y = 0; y < h; y += 4) {
+        const noise = Math.sin(y * 0.02) * 5;
+        ctx.fillStyle = `rgb(${128 + noise}, ${128 - noise * 0.5}, 255)`;
+        ctx.fillRect(0, y, w, 4);
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(1, 2);
+    textureCache['wood-normal'] = texture;
+    return texture;
+}
+
+function generateFloorTileColorMap(w = 512, h = 256) {
+    if (textureCache['floor-tile-color']) return textureCache['floor-tile-color'];
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+
+    const tileSize = w / 6;
+
+    ctx.fillStyle = '#c8a878';
+    ctx.fillRect(0, 0, w, h);
+
+    for (let y = 0; y < 4; y++) {
+        for (let x = 0; x < 6; x++) {
+            const posX = x * tileSize;
+            const posY = y * tileSize;
+
+            // Tile color with variation
+            const variation = 0.95 + Math.random() * 0.1;
+            ctx.fillStyle = `hsl(35, 35%, ${60 * variation}%)`;
+            ctx.fillRect(posX, posY, tileSize - 6, tileSize - 6);
+
+            // Grout lines
+            ctx.fillStyle = '#9a7a58';
+            ctx.fillRect(posX + tileSize - 6, posY, 6, tileSize);
+            ctx.fillRect(posX, posY + tileSize - 6, tileSize, 6);
+        }
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearMipMapLinearFilter;
+    texture.repeat.set(3, 3);
+    textureCache['floor-tile-color'] = texture;
+    return texture;
+}
+
+function generateConcreteColorMap(w = 512, h = 512) {
+    if (textureCache['concrete-color']) return textureCache['concrete-color'];
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#a0938a';
+    ctx.fillRect(0, 0, w, h);
+
+    // Concrete texture - random speckles
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const data = imageData.data;
+
+    for (let i = 0; i < data.length; i += 4) {
+        const variation = (Math.random() - 0.5) * 0.15;
+        const base = 160;
+        data[i] = Math.max(0, Math.min(255, base + variation * 255));     // R
+        data[i + 1] = Math.max(0, Math.min(255, base - 10 + variation * 255)); // G
+        data[i + 2] = Math.max(0, Math.min(255, base - 15 + variation * 255)); // B
+        data[i + 3] = 255; // A
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearMipMapLinearFilter;
+    textureCache['concrete-color'] = texture;
+    return texture;
+}
+
+function generateGrassColorMap(w = 512, h = 512) {
+    if (textureCache['grass-color']) return textureCache['grass-color'];
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#4a9d6f';
+    ctx.fillRect(0, 0, w, h);
+
+    // Grass variation - lighter and darker spots
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const data = imageData.data;
+
+    for (let i = 0; i < data.length; i += 4) {
+        const variation = (Math.random() - 0.5) * 0.2;
+        data[i] = Math.max(0, Math.min(255, 74 + variation * 255));       // R
+        data[i + 1] = Math.max(0, Math.min(255, 157 + variation * 255));  // G
+        data[i + 2] = Math.max(0, Math.min(255, 111 + variation * 255));  // B
+        data[i + 3] = 255; // A
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearMipMapLinearFilter;
+    texture.repeat.set(4, 4);
+    textureCache['grass-color'] = texture;
+    return texture;
+}
+
 let scene;
 let camera;
 let renderer;
@@ -55,21 +401,26 @@ function createRoom(width, depth, height, color, id, label, isUpperFloor) {
     group.userData = { id, baseColor: color };
 
     const wallMaterial = new THREE.MeshStandardMaterial({
-        color,
-        roughness: 0.4,
+        color: 0xffffff,
+        map: generateBrickColorMap(),
+        normalMap: generateBrickNormalMap(),
+        normalScale: new THREE.Vector2(0.8, 0.8),
+        roughness: 0.85,
         metalness: 0.0,
         emissive: 0x000000,
         side: THREE.DoubleSide,
     });
 
     const floorMaterial = new THREE.MeshStandardMaterial({
-        color: 0xb8956a,
-        roughness: 0.7,
+        color: 0xffffff,
+        map: generateFloorTileColorMap(),
+        roughness: 0.6,
         metalness: 0,
     });
 
     const ceilingMaterial = new THREE.MeshStandardMaterial({
-        color: 0xfaf8f3,
+        color: 0xffffff,
+        map: generateConcreteColorMap(),
         roughness: 0.5,
         metalness: 0,
     });
@@ -319,8 +670,10 @@ function createRoom(width, depth, height, color, id, label, isUpperFloor) {
         // Door panel (wooden door)
         const doorPanelGeom = new THREE.BoxGeometry(0.65, 0.95, 0.05);
         const doorPanelMat = new THREE.MeshStandardMaterial({
-            color: 0x8b6f47,
-            roughness: 0.45,
+            color: 0xffffff,
+            map: generateWoodColorMap(),
+            normalMap: generateWoodNormalMap(),
+            roughness: 0.55,
             metalness: 0.02,
         });
         const doorPanel = new THREE.Mesh(doorPanelGeom, doorPanelMat);
@@ -373,8 +726,10 @@ function createRoof(width, depth) {
 
     // Refined roof material with better appearance
     const roofMaterial = new THREE.MeshStandardMaterial({
-        color: 0x6b3d25,
-        roughness: 0.8,
+        color: 0xffffff,
+        map: generateRoofTileColorMap(),
+        normalMap: generateRoofTileNormalMap(),
+        roughness: 0.9,
         metalness: 0.03,
     });
 
@@ -501,8 +856,10 @@ function createRoof(width, depth) {
 
     // Chimneys
     const chimneyBrickMaterial = new THREE.MeshStandardMaterial({
-        color: 0xc84c2a,
-        roughness: 0.75,
+        color: 0xffffff,
+        map: generateBrickColorMap(),
+        normalMap: generateBrickNormalMap(),
+        roughness: 0.85,
         metalness: 0.02,
         side: THREE.DoubleSide,
     });
@@ -648,8 +1005,8 @@ function initScene3D() {
     mountPoint.style.height = '100%';
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xcfe2f3);
-    scene.fog = new THREE.Fog(0xcfe2f3, 35, 90);
+    scene.background = new THREE.Color(0x87CEEB);
+    scene.fog = new THREE.Fog(0x87CEEB, 35, 90);
 
     const width = mountPoint.clientWidth || 360;
     const height = mountPoint.clientHeight || 560;
@@ -686,6 +1043,11 @@ function initScene3D() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.mapSize.width = 4096;
+    renderer.shadowMap.mapSize.height = 4096;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
     renderer.domElement.style.display = 'block';
@@ -704,14 +1066,14 @@ function initScene3D() {
     controls.update();
 
     // Lighting for isometric view - softer and more natural
-    const ambient = new THREE.AmbientLight(0xffffff, 1.0);
-    scene.add(ambient);
+    const hemisphere = new THREE.HemisphereLight(0x87CEEB, 0x4a7a4a, 0.8);
+    scene.add(hemisphere);
 
-    const sun = new THREE.DirectionalLight(0xffe5cc, 2.0);
+    const sun = new THREE.DirectionalLight(0xffe5cc, 1.8);
     sun.position.set(10, 14, 8);
     sun.castShadow = true;
-    sun.shadow.mapSize.width = 2048;
-    sun.shadow.mapSize.height = 2048;
+    sun.shadow.mapSize.width = 4096;
+    sun.shadow.mapSize.height = 4096;
     sun.shadow.camera.left = -15;
     sun.shadow.camera.right = 15;
     sun.shadow.camera.top = 15;
@@ -725,7 +1087,8 @@ function initScene3D() {
 
     // Ground
     const groundMaterial = new THREE.MeshStandardMaterial({
-        color: 0x4a9d6f,
+        color: 0xffffff,
+        map: generateGrassColorMap(),
         roughness: 0.92,
         metalness: 0,
     });
@@ -776,10 +1139,12 @@ function initScene3D() {
 
     // Garden / Patio INFRONT of the house (positive z)
     const patioMaterial = new THREE.MeshStandardMaterial({
-        color: 0xd4a574,
+        color: 0xffffff,
+        map: generateFloorTileColorMap(),
         roughness: 0.7,
         metalness: 0,
     });
+    patioMaterial.map.repeat.set(2, 1);
     const patioGeom = new THREE.BoxGeometry(2.8, 0.2, 1.8);
     const patio = new THREE.Mesh(patioGeom, patioMaterial);
     patio.position.set(0, 0.1, 1.5);
@@ -803,7 +1168,8 @@ function initScene3D() {
 
     // Grass/garden area around patio
     const grassMaterial = new THREE.MeshStandardMaterial({
-        color: 0x3d9a5d,
+        color: 0xffffff,
+        map: generateGrassColorMap(),
         roughness: 0.88,
         metalness: 0,
     });
