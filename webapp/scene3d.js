@@ -700,11 +700,13 @@ function createRoom(width, depth, height, color, id, label, isUpperFloor) {
         group.add(lockPlate);
     }
 
-    // Ceiling light fixture
+    // Ceiling light fixture (emits light)
     const lightFixtureMaterial = new THREE.MeshStandardMaterial({
-        color: 0x9a8a7a,
-        roughness: 0.35,
+        color: 0xfff5cc,
+        roughness: 0.2,
         metalness: 0.4,
+        emissive: 0xfff5cc,
+        emissiveIntensity: 0.8,
     });
     const fixtureGeom = new THREE.CylinderGeometry(0.15, 0.15, 0.08, 16);
     const fixture = new THREE.Mesh(fixtureGeom, lightFixtureMaterial);
@@ -1064,24 +1066,32 @@ function initScene3D() {
     controls.update();
 
     // Lighting for isometric view - softer and more natural
-    const hemisphere = new THREE.HemisphereLight(0x87CEEB, 0x4a7a4a, 0.8);
+    const hemisphere = new THREE.HemisphereLight(0x87CEEB, 0x4a7a4a, 0.6);
     scene.add(hemisphere);
 
-    const sun = new THREE.DirectionalLight(0xffe5cc, 1.8);
-    sun.position.set(10, 14, 8);
+    const sun = new THREE.DirectionalLight(0xffd27a, 2.2);
+    sun.position.set(8, 12, 6);
     sun.castShadow = true;
-    sun.shadow.mapSize.width = 4096;
-    sun.shadow.mapSize.height = 4096;
-    sun.shadow.camera.left = -15;
-    sun.shadow.camera.right = 15;
-    sun.shadow.camera.top = 15;
-    sun.shadow.camera.bottom = -5;
-    sun.shadow.bias = -0.0005;
+    sun.shadow.mapSize.width = 2048;
+    sun.shadow.mapSize.height = 2048;
+    sun.shadow.camera.left = -12;
+    sun.shadow.camera.right = 12;
+    sun.shadow.camera.top = 12;
+    sun.shadow.camera.bottom = -6;
+    sun.shadow.camera.near = 0.5;
+    sun.shadow.camera.far = 40;
+    sun.shadow.bias = -0.0003;
+    sun.shadow.radius = 3;
+    sun.shadow.normalBias = 0.02;
     scene.add(sun);
 
     const fill = new THREE.DirectionalLight(0xa8d5ff, 0.7);
     fill.position.set(-7, 6, -9);
     scene.add(fill);
+
+    const rim = new THREE.DirectionalLight(0x8ab4d8, 0.5);
+    rim.position.set(-6, 8, -10);
+    scene.add(rim);
 
     // Ground
     const groundMaterial = new THREE.MeshStandardMaterial({
@@ -1134,6 +1144,28 @@ function initScene3D() {
 
     // Add house to scene
     scene.add(houseGroup);
+
+    // Interior lights (PointLights inside rooms)
+    // Salón — warm ceiling light
+    const salonLight = new THREE.PointLight(0xffcc77, 1.2, 4.0);
+    salonLight.position.set(0, 1.6, -0.5);
+    salonLight.castShadow = false;
+    scene.add(salonLight);
+
+    // Dormitorio — warm/neutral ceiling light
+    const dormLight = new THREE.PointLight(0xffdda0, 0.9, 4.0);
+    dormLight.position.set(0, 3.6, -0.5);
+    dormLight.castShadow = false;
+    scene.add(dormLight);
+
+    // Window glow lights (simulate light coming from inside through windows)
+    const winGlowLow = new THREE.PointLight(0xffa050, 0.5, 2.5);
+    winGlowLow.position.set(0, 1.1, -1.7);
+    scene.add(winGlowLow);
+
+    const winGlowHigh = new THREE.PointLight(0xffa050, 0.4, 2.0);
+    winGlowHigh.position.set(0, 3.0, -1.7);
+    scene.add(winGlowHigh);
 
     // Garden / Patio INFRONT of the house (positive z)
     const patioMaterial = new THREE.MeshStandardMaterial({
