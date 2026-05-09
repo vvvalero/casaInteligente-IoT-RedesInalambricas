@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO,
 
 # Connection pooling: reutiliza conexiones TCP para mejorar concurrencia
 _session = requests.Session()
-retry_strategy = Retry(total=2, status_forcelist=[429, 500, 502, 503, 504], method_whitelist=["GET", "POST", "PATCH"])
+retry_strategy = Retry(total=2, status_forcelist=[429, 500, 502, 503, 504], allowed_methods=["GET", "POST", "PATCH"])
 adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=20, pool_maxsize=20)
 _session.mount("http://", adapter)
 _session.mount("https://", adapter)
