@@ -1009,8 +1009,8 @@ function initScene3D() {
     mountPoint.style.height = '100%';
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xd4a894);
-    scene.fog = new THREE.Fog(0xd4a894, 35, 90);
+    scene.background = new THREE.Color(0xb8d4e8);
+    scene.fog = new THREE.Fog(0xb8d4e8, 35, 90);
 
     const width = mountPoint.clientWidth || 360;
     const height = mountPoint.clientHeight || 560;
