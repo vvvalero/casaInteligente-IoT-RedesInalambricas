@@ -160,19 +160,23 @@ elif NODE_TYPE == 'exterior':
 # CONEXION LORAWAN (OTAA)
 # ============================================================
 lora = LoRa(mode=LoRa.LORAWAN, region=LoRa.EU868)
-lora.nvram_erase()
+# NOTA: nvram_erase() solo se usa UNA VEZ al provisionar.
+# NO descomentar en producción — borra la sesión guardada y fuerza rejoin cada arranque
+# lora.nvram_erase()
 
 print('Intentando join OTAA...')
+join_backoff = 2
 while not lora.has_joined():
     sistema_join_espera()
     try:
         lora.join(activation=LoRa.OTAA, auth=(APP_EUI, APP_KEY), timeout=15000)
-    except OSError:
-        pass
+    except OSError as e:
+        print('  Error join: {}'.format(e))
     if not lora.has_joined():
         pycom.rgbled(0x000000)
-        time.sleep(2)
-        print('  Esperando join...')
+        print('  Esperando join (reintentando en {}s)...'.format(join_backoff))
+        time.sleep(join_backoff)
+        join_backoff = min(join_backoff + 3, 30)
 
 print('Join completado!')
 sistema_conectado()
@@ -336,6 +340,21 @@ def _procesar_downlink(data):
 while True:
     print('\n--- Ciclo {} ---'.format(NODE_TYPE))
 
+    # Validar que seguimos conectados a LoRa
+    if not lora.has_joined():
+        print('ERROR: Perdida conexion LoRa, rejoin necesario')
+        while not lora.has_joined():
+            sistema_join_espera()
+            try:
+                lora.join(activation=LoRa.OTAA, auth=(APP_EUI, APP_KEY), timeout=15000)
+            except OSError:
+                pass
+            if not lora.has_joined():
+                pycom.rgbled(0x000000)
+                time.sleep(5)
+        sistema_conectado()
+        print('Reconectado a LoRa')
+
     try:
         if NODE_TYPE == 'salon':
             payloads = [_leer_salon()]
@@ -359,10 +378,27 @@ while True:
 
         sistema_transmitiendo()
         s.setblocking(True)
-        s.settimeout(2.5)
-        s.send(payload)
-        print('  Uplink enviado')
+        s.settimeout(3.5)
 
+        # Retry en envío: si falla, reintentar una vez
+        send_ok = False
+        for retry in range(2):
+            try:
+                s.send(payload)
+                print('  Uplink enviado')
+                send_ok = True
+                break
+            except Exception as e:
+                print('  Error enviando (intento {}/2): {}'.format(retry + 1, e))
+                if retry < 1:
+                    time.sleep(1)
+
+        if not send_ok:
+            print('  Fallo envío después de retries')
+            sistema_conectado()
+            continue
+
+        # Recibir downlink (RX1~1s, RX2~2s después de TX)
         try:
             data = s.recv(64)
             if data:
