@@ -105,7 +105,7 @@ function generateRoofTileColorMap(w = 512, h = 512) {
     canvas.height = h;
     const ctx = canvas.getContext('2d');
 
-    ctx.fillStyle = '#8a4520';
+    ctx.fillStyle = '#a63030';
     ctx.fillRect(0, 0, w, h);
 
     const tileW = w / 6;
@@ -113,27 +113,34 @@ function generateRoofTileColorMap(w = 512, h = 512) {
 
     for (let y = 0; y < 10; y++) {
         const offset = (y % 2) * (tileW / 2);
-        // Vary row color for more visual interest
-        const rowHue = 8 + (y % 3) * 8; // varies between hues for different rows
+        // Vary row color - deeper reds
+        const rowHue = 0 + (y % 4) * 5; // varies between deep reds
 
         for (let x = 0; x < 10; x++) {
             const posX = x * tileW + offset;
             const posY = y * tileH;
 
-            // Tile base color - warm terracotta variations
-            const variation = 0.85 + Math.random() * 0.25;
-            const tileHue = rowHue + Math.random() * 12;
-            const saturation = 70 + Math.random() * 15;
-            const lightness = 38 + Math.random() * 14;
+            // Tile base color - deep red/terracotta
+            const tileHue = rowHue + Math.random() * 10;
+            const saturation = 75 + Math.random() * 20;
+            const lightness = 35 + Math.random() * 18;
             ctx.fillStyle = `hsl(${tileHue}, ${saturation}%, ${lightness}%)`;
             ctx.fillRect(posX, posY, tileW - 2, tileH);
 
-            // Shadow at bottom of tile - deeper
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            // Texture detail - tiny weathering spots
+            for (let i = 0; i < 8; i++) {
+                const spotX = posX + Math.random() * (tileW - 2);
+                const spotY = posY + Math.random() * tileH;
+                ctx.fillStyle = `rgba(0, 0, 0, ${Math.random() * 0.15})`;
+                ctx.fillRect(spotX, spotY, 2, 1);
+            }
+
+            // Shadow at bottom of tile - very deep
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
             ctx.fillRect(posX, posY + tileH - 3, tileW - 2, 3);
 
-            // Highlight at top - warmer
-            ctx.fillStyle = 'rgba(255, 200, 100, 0.15)';
+            // Highlight at top - warm glow
+            ctx.fillStyle = 'rgba(255, 150, 80, 0.2)';
             ctx.fillRect(posX, posY, tileW - 2, 2);
         }
     }
@@ -167,21 +174,29 @@ function generateRoofTileNormalMap(w = 512, h = 512) {
             const posX = x * tileW + offset;
             const posY = y * tileH;
 
-            // Curved surface with better relief (side edges pointing outward)
+            // Curved surface with strong relief (side edges pointing outward)
             for (let i = 0; i < tileW - 2; i++) {
-                const intensity = Math.abs((tileW / 2 - i) / (tileW / 2)) * 25;
+                const intensity = Math.abs((tileW / 2 - i) / (tileW / 2)) * 30;
                 const rVal = Math.min(255, 128 + intensity);
                 ctx.fillStyle = `rgb(${rVal}, 128, 255)`;
                 ctx.fillRect(posX + i, posY, 1, tileH);
             }
 
-            // Deep shadow at bottom for more depth
-            ctx.fillStyle = 'rgb(95, 95, 190)';
+            // Weathering texture detail
+            for (let i = 0; i < 12; i++) {
+                const spotX = posX + Math.random() * (tileW - 2);
+                const spotY = posY + Math.random() * tileH;
+                ctx.fillStyle = `rgb(120, 120, 245)`;
+                ctx.fillRect(spotX, spotY, 1, 1);
+            }
+
+            // Very deep shadow at bottom for maximum depth
+            ctx.fillStyle = 'rgb(90, 90, 185)';
             ctx.fillRect(posX, posY + tileH - 3, tileW - 2, 3);
 
-            // Highlight at top edge
-            ctx.fillStyle = 'rgb(150, 150, 255)';
-            ctx.fillRect(posX, posY, tileW - 2, 1);
+            // Bright highlight at top edge
+            ctx.fillStyle = 'rgb(160, 160, 255)';
+            ctx.fillRect(posX, posY, tileW - 2, 2);
         }
     }
 
@@ -831,27 +846,6 @@ function createRoof(width, depth) {
     backGable.castShadow = true;
     backGable.receiveShadow = true;
     group.add(backGable);
-
-    // Eaves/soffit
-    const eavesMaterial = new THREE.MeshStandardMaterial({
-        color: 0x5a3d2a,
-        roughness: 0.6,
-        metalness: 0.1,
-        side: THREE.DoubleSide,
-    });
-
-    const eaveDepthGeom = new THREE.BoxGeometry(roofWidth, 0.15, 0.3);
-    const eaveFront = new THREE.Mesh(eaveDepthGeom, eavesMaterial);
-    eaveFront.position.set(0, -0.08, -roofDepth/2 - 0.15);
-    eaveFront.castShadow = true;
-    eaveFront.receiveShadow = true;
-    group.add(eaveFront);
-
-    const eaveBack = new THREE.Mesh(eaveDepthGeom, eavesMaterial);
-    eaveBack.position.set(0, -0.08, roofDepth/2 + 0.15);
-    eaveBack.castShadow = true;
-    eaveBack.receiveShadow = true;
-    group.add(eaveBack);
 
     // Ridge cap
     const ridgeMaterial = new THREE.MeshStandardMaterial({
