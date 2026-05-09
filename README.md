@@ -54,22 +54,23 @@
 
 ## Despliegue
 
-El sistema soporta dos modos de despliegue:
+El sistema se despliega en `https://api.vvalero.dev` con certificado TLS automático (Let's Encrypt). El subdominio `api.vvalero.dev` apunta mediante registro DNS tipo A a la IP pública de la VM universitaria.
 
-| Modo | Cuándo usarlo | Comando |
-|---|---|---|
-| **Local (WSL2)** | Desarrollo y pruebas | `./services start` |
-| **DMZ Universidad** | Demo y producción | `./services_dmz start` |
-
-En el modo DMZ, el sistema se expone en `https://api.vvalero.dev` con certificado TLS automático (Let's Encrypt). El subdominio `api.vvalero.dev` apunta mediante registro DNS tipo A a la IP pública de la VM universitaria.
+```bash
+./services_dmz start     # Inicia el stack completo
+./services_dmz stop      # Detiene los servicios
+./services_dmz reset     # Reset completo (borra datos)
+./services_dmz logs      # Ver logs de los servicios
+```
 
 ---
 
 ## Requisitos previos
 
 - **Hardware**: 3× LoPy4 + Pysense, 1× ESP32, módulo PN532 NFC (para nodo dormitorio)
-- **Software**: VS Code + extensión Pymakr, WSL2 Ubuntu, Docker Engine
+- **Software**: VS Code + extensión Pymakr, Docker Engine, certbot
 - **Cuentas**: The Things Network — [eu1.cloud.thethings.network](https://eu1.cloud.thethings.network)
+- **Infraestructura**: VM universitaria con IP pública, dominio vvalero.dev con control DNS
 
 ---
 
@@ -190,152 +191,11 @@ TTN Console → tu aplicación → **Live data** → los uplinks deben llegar co
 
 ---
 
-### PARTE 3 · Fiware en WSL2 (desarrollo local)
-
-> Todos los comandos se ejecutan en una terminal **Ubuntu (WSL2)**.
-
-#### Paso 8 · Clonar el repositorio
-
-```bash
-git clone https://github.com/tuusuario/smart-home-iot.git
-cd smart-home-iot
-```
-
-#### Paso 9 · Arrancar el stack Docker
-
-```bash
-chmod +x services
-./services start
-```
-
-Resultado esperado:
-```
-✔ Container smarthome-mongodb   Healthy
-✔ Container smarthome-orion     Healthy
-✔ Container smarthome-iot-agent Started
-✔ Container smarthome-mosquitto Started
-  Orion:     OK ✅  v3.10.1
-  IoT Agent: OK ✅
-  MQTT:      OK ✅  puerto 1883
-```
-
-Si aparece `Pool overlaps with other one on this address space`:
-```bash
-docker network rm fiware_default
-./services start
-```
-
-#### Paso 10 · Crear entidades, registrar dispositivos y suscripciones
-
-```bash
-bash fiware/ngsi/ngsi_crear_entidades.sh
-bash fiware/iot-agent/iot_agent_setup.sh
-bash fiware/subscriptions/ngsi_subscripciones.sh
-```
-
-Todos los scripts deben devolver **HTTP 201** en todas las líneas.
-
-> La suscripción `[8] Acceso NFC` dará HTTP 400 la primera vez — es normal.
-> El tipo `AccessLog` no existe hasta el primer acceso NFC. Se creará automáticamente.
-
-#### Paso 11 · Configurar el servidor de automatización
-
-Edita `scripts/notification_server.py` y rellena:
-
-```python
-TTN_API_KEY = "NNSXS.TU_API_KEY_AQUI"
-# TTN Console → Applications → API keys → Generate
-# Permiso necesario: "Write downlink application traffic"
-```
-
-Los Device IDs ya tienen los valores por defecto correctos:
-```python
-SENSOR_TO_TTN = {
-    "Sensor:s1": "lopy4-salon",
-    "Sensor:s2": "lopy4-dormitorio",
-    "Sensor:s3": "lopy4-exterior",
-}
-```
-
-Arranca el servidor:
-```bash
-bash scripts/arrancar_servidor.sh
-```
-
-El script crea el entorno virtual automáticamente. Resultado esperado:
-```
-Casa Inteligente IoT - Servidor de notificaciones
-Servidor en http://0.0.0.0:5000
- * Running on http://127.0.0.1:5000
-```
-
-#### Paso 12 · Configurar UIDs NFC autorizados
-
-Acerca una tarjeta NFC al nodo dormitorio y observa el log del servidor — aparecerá el UID detectado. Añádelo a la lista de autorizados:
-
-```bash
-curl -X PATCH "http://localhost:1026/v2/entities/Sensor:s2/attrs?options=keyValues" \
-  -H 'Content-Type: application/json' \
-  -H 'fiware-service: smarthome' -H 'fiware-servicepath: /' \
-  -d '{"nfcAuthorizedUIDs": "A1B2C3D4,OTROTARJETA"}'
-```
-
----
-
-### PARTE 4 · Conectar TTN con Fiware
-
-#### Paso 13 · Exponer el IoT Agent a internet con ngrok (desarrollo local)
-
-```bash
-# Instalar ngrok
-curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
-  | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
-echo "deb https://ngrok-agent.s3.amazonaws.com buster main" \
-  | sudo tee /etc/apt/sources.list.d/ngrok.list
-sudo apt update && sudo apt install ngrok
-
-# Autenticar (cuenta gratuita en ngrok.com)
-ngrok config add-authtoken TU_TOKEN_NGROK
-
-# Crear el túnel al IoT Agent
-ngrok http 4041
-```
-
-Copia la URL HTTPS: `https://xxxx.ngrok-free.app`
-
-> En el DMZ universitario este paso no es necesario — se usa `https://api.vvalero.dev` directamente.
-
-#### Paso 14 · Crear el Webhook en TTN
-
-TTN Console → tu aplicación → **Integrations** → **Webhooks** → **+ Add webhook** → **Custom webhook**:
-
-| Campo | Valor (local) | Valor (DMZ) |
-|---|---|---|
-| Webhook ID | `fiware-smarthome` | `fiware-smarthome` |
-| Base URL | `https://xxxx.ngrok-free.app/iot/ul` | `https://api.vvalero.dev/iot/ul` |
-| Format | JSON | JSON |
-| Uplink message | ✓ | ✓ |
-| Header 1 | `fiware-service: smarthome` | `fiware-service: smarthome` |
-| Header 2 | `fiware-servicepath: /` | `fiware-servicepath: /` |
-
-#### Paso 15 · Verificar la cadena completa
-
-Espera al siguiente uplink del LoPy4 y comprueba que los datos llegan a Orion:
-
-```bash
-curl -s "http://localhost:1026/v2/entities/Sensor:s1?options=keyValues" \
-  -H 'fiware-service: smarthome' | python3 -m json.tool
-```
-
-Deberías ver `temperature`, `humidity`, `luminosity` etc. con valores reales y actualizándose.
-
----
-
-### PARTE 5 · Despliegue en DMZ universitario
+### PARTE 3 · Despliegue en DMZ universitario
 
 > Solo necesario para exposición pública en `api.vvalero.dev`.
 
-#### Paso 16 · Configurar el registro DNS
+#### Paso 8 · Configurar el registro DNS
 
 En Vercel → `vvalero.dev` → DNS Records → añadir:
 
@@ -343,14 +203,14 @@ En Vercel → `vvalero.dev` → DNS Records → añadir:
 |---|---|---|
 | A | api | IP pública de la VM universitaria |
 
-#### Paso 17 · Preparar credenciales en la VM
+#### Paso 9 · Preparar credenciales en la VM
 
 ```bash
 cp .env.example .env
 nano .env   # rellenar TTN_API_KEY y device IDs
 ```
 
-#### Paso 18 · Ejecutar el setup automático
+#### Paso 10 · Ejecutar el setup automático
 
 ```bash
 bash scripts/setup_dmz.sh
@@ -358,7 +218,7 @@ bash scripts/setup_dmz.sh
 
 El script verifica el DNS, obtiene el certificado TLS y arranca el stack completo.
 
-#### Paso 19 · Inicializar Fiware en el DMZ
+#### Paso 11 · Inicializar Fiware en el DMZ
 
 ```bash
 bash fiware/ngsi/ngsi_crear_entidades.sh
@@ -366,9 +226,33 @@ bash fiware/iot-agent/iot_agent_setup.sh
 bash fiware/subscriptions/ngsi_subscripciones.sh
 ```
 
-#### Paso 20 · Actualizar el webhook en TTN
+#### Paso 12 · Crear el Webhook en TTN
 
-Cambiar la Base URL del webhook a `https://api.vvalero.dev/iot/ul` (ver Paso 14).
+TTN Console → tu aplicación → **Integrations** → **Webhooks** → **+ Add webhook** → **Custom webhook**:
+
+| Campo | Valor |
+|---|---|
+| Webhook ID | `fiware-smarthome` |
+| Base URL | `https://api.vvalero.dev/iot/ul` |
+| Format | JSON |
+| Uplink message | ✓ |
+| Header 1 | `fiware-service: smarthome` |
+| Header 2 | `fiware-servicepath: /` |
+
+#### Paso 13 · Verificar la cadena completa
+
+Espera al siguiente uplink del LoPy4 y comprueba que los datos llegan a Orion. Conéctate a la VM:
+
+```bash
+ssh user@api.vvalero.dev
+
+# Dentro de la VM:
+curl -s "https://api.vvalero.dev/v2/entities/Sensor:s1?options=keyValues" \
+  -H 'fiware-service: smarthome' \
+  -H 'fiware-servicepath: /' | python3 -m json.tool
+```
+
+Deberías ver `temperature`, `humidity`, `luminosity` etc. con valores reales y actualizándose.
 
 ---
 
@@ -448,10 +332,10 @@ downlinks que cambian su color según el evento detectado.
 ```
 smart-home/
 ├── .env.example                          # Plantilla variables de entorno (DMZ)
+├── .env                                  # Variables de entorno configuradas
 ├── .gitignore
 ├── README.md
-├── services                              # Gestión Docker local: start|stop|reset
-├── services_dmz                          # Gestión Docker DMZ:   start|stop|reset
+├── services_dmz                          # Gestión Docker DMZ: start|stop|reset
 │
 ├── esp32/
 │   └── nfc_ble_broadcaster/
@@ -481,8 +365,7 @@ smart-home/
 │   └── subscriptions/ngsi_subscripciones.sh  # Crea las 8 suscripciones
 │
 ├── docker/
-│   ├── docker-compose.yml                # Stack local: Orion+MongoDB+IoTAgent+Mosquitto
-│   ├── docker-compose.dmz.yml            # Stack DMZ: añade Nginx+Certbot
+│   ├── docker-compose_dmz.yml            # Stack DMZ: Orion+MongoDB+IoTAgent+Mosquitto+Nginx+Certbot
 │   ├── Dockerfile.notification           # Imagen del notification server (DMZ)
 │   ├── mosquitto/mosquitto.conf
 │   └── nginx/
@@ -491,10 +374,8 @@ smart-home/
 │
 └── scripts/
     ├── notification_server.py            # Servidor Flask: 8 reglas + TTN downlinks
-    ├── arrancar_servidor.sh              # Gestiona venv y arranca el servidor (local)
     ├── setup_dmz.sh                      # Instalación automática en el DMZ
-    ├── requirements.txt                  # Dependencias Python (Flask, requests)
-    └── mqtt_simulator.py                 # Simulador de sensores sin hardware
+    └── requirements.txt                  # Dependencias Python (Flask, requests)
 ```
 
 ---
@@ -516,28 +397,31 @@ AccessLog:N  ← una entidad nueva por cada lectura NFC (nfcUID, authorized, tim
 ## Comandos de verificación y gestión
 
 ```bash
-# Estado de los 3 sensores en Orion
-curl -s "http://localhost:1026/v2/entities?type=Sensor&options=keyValues" \
-  -H 'fiware-service: smarthome' | python3 -m json.tool
+# Estado de los 3 sensores en Orion (desde la VM)
+curl -s "https://api.vvalero.dev/v2/entities?type=Sensor&options=keyValues" \
+  -H 'fiware-service: smarthome' -H 'fiware-servicepath: /' | python3 -m json.tool
 
 # Alertas activas
-curl -s "http://localhost:5000/alerts" | python3 -m json.tool
+curl -s "https://api.vvalero.dev/alerts" | python3 -m json.tool
 
 # Historial de accesos NFC
-curl -s "http://localhost:5000/access-log" | python3 -m json.tool
+curl -s "https://api.vvalero.dev/access-log" | python3 -m json.tool
 
 # Estado del servidor
-curl -s "http://localhost:5000/health"
+curl -s "https://api.vvalero.dev/health"
 
-# Parar el stack Docker
-./services stop
-
-# Reinicio completo (borra todos los datos)
-./services reset
-
-# Ver logs de un servicio concreto (DMZ)
+# Ver logs de servicios
 ./services_dmz logs orion
 ./services_dmz logs notification-server
+
+# Parar el stack Docker
+./services_dmz stop
+
+# Reinicio completo (borra todos los datos)
+./services_dmz reset
+
+# Renovar certificado TLS (si lo necesitas antes de la renovación automática)
+./services_dmz renew-cert
 ```
 
 ---
@@ -549,21 +433,15 @@ Verifica que en TTN Console el dispositivo está registrado como LoRaWAN Specifi
 
 **`Pool overlaps with other one on this address space`:**
 ```bash
-docker network rm fiware_default && ./services start
+docker network rm fiware_default
+./services_dmz start
 ```
-
-**`externally-managed-environment` al instalar pip:**
-Usa siempre `bash scripts/arrancar_servidor.sh` en lugar de pip directamente. El script gestiona el entorno virtual automáticamente.
-
-**Suscripción [8] AccessLog da HTTP 400:**
-Normal al primer arranque — el tipo `AccessLog` no existe hasta el primer acceso NFC. Se crea automáticamente y no requiere intervención.
 
 **Presión baja dispara alerta incorrectamente:**
 La presión normal en Albacete es ~941 hPa por la altitud (~700m). El umbral ya está corregido a 950 hPa en `notification_server.py`.
 
-
 **Downlinks TTN dan HTTP 400:**
-La `TTN_API_KEY` no está configurada en `notification_server.py`. Generarla en TTN Console → Applications → API keys con permiso `Write downlink application traffic`.
+La `TTN_API_KEY` no está configurada en `.env`. Generarla en TTN Console → Applications → API keys con permiso `Write downlink application traffic`.
 
 **El nodo dormitorio nunca detecta tarjeta NFC:**
 1. Verifica que el ESP32 está encendido y el Monitor Serie muestra `[SYS] Listo`.
