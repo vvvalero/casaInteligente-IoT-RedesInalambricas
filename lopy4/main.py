@@ -14,7 +14,7 @@
 # Payload Cayenne LPP por nodo:
 #   Salon:      CH1=temp CH2=hum CH3=lux CH4=pres CH5=accel CH6=room
 #   Dormitorio: CH1=temp CH2=hum CH3=lux CH4=nfc_uid CH5=room
-#   Exterior:   CH1=temp CH2=hum CH3=pres CH4=ble_count CH5=room
+#   Exterior:   CH1=temp CH2=hum CH3=lux CH4=pres CH5=ble_count CH6=room
 #
 # Downlink (desde Fiware via TTN) — controla el LED RGB integrado:
 #   Byte 0: comando
@@ -268,8 +268,8 @@ def _leer_exterior():
         resultado = _ble.escanear()
         n_cercanos = resultado['cercanos']
 
-    print('  T={:.1f}C H={:.1f}% P={:.1f}hPa BLE={}'.format(
-        temp, hum, pres, n_cercanos))
+    print('  T={:.1f}C H={:.1f}% Lux={} P={:.1f}hPa BLE={}'.format(
+        temp, hum, lux, pres, n_cercanos))
 
     if lux < 50:
         print('  Luminosidad baja exterior ({} lux)'.format(lux))
@@ -278,9 +278,10 @@ def _leer_exterior():
     lpp = CayenneLPP()
     lpp.add_temperature(1, temp)
     lpp.add_relative_humidity(2, hum)
-    lpp.add_barometric_pressure(3, pres)
-    lpp.add_digital_input(4, min(n_cercanos, 255))
-    lpp.add_digital_input(5, ROOM_ID['exterior'])
+    lpp.add_luminosity(3, lux)
+    lpp.add_barometric_pressure(4, pres)
+    lpp.add_digital_input(5, min(n_cercanos, 255))
+    lpp.add_digital_input(6, ROOM_ID['exterior'])
     return bytes(lpp.get_buffer())
 
 
