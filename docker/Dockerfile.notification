@@ -24,4 +24,4 @@ ENV SENSOR_S1_DEVICE=lopy4-salon
 ENV SENSOR_S2_DEVICE=lopy4-dormitorio
 ENV SENSOR_S3_DEVICE=lopy4-exterior
 
-CMD ["python3", "notification_server.py"]
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "--timeout", "30", "notification_server:app"]

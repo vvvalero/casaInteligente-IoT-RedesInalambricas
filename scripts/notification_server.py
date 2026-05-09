@@ -11,11 +11,20 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests, json, logging, base64, time, os, re
 from datetime import datetime, timezone
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 app = Flask(__name__)
 CORS(app)
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s [%(levelname)s] %(message)s')
+
+# Connection pooling: reutiliza conexiones TCP para mejorar concurrencia
+_session = requests.Session()
+retry_strategy = Retry(total=2, status_forcelist=[429, 500, 502, 503, 504], method_whitelist=["GET", "POST", "PATCH"])
+adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=20, pool_maxsize=20)
+_session.mount("http://", adapter)
+_session.mount("https://", adapter)
 
 # ============================================================
 # CONFIG
@@ -56,7 +65,7 @@ _log_counter   = int(time.time())
 
 def _patch(eid, attrs):
     try:
-        r = requests.patch(
+        r = _session.patch(
             f"{ORION}/v2/entities/{eid}/attrs?options=keyValues",
             json=attrs, headers=FS_HEADERS, timeout=5)
         logging.info(f"PATCH {eid} → {r.status_code}")
@@ -66,7 +75,7 @@ def _patch(eid, attrs):
 
 def _post_entity(entity):
     try:
-        r = requests.post(
+        r = _session.post(
             f"{ORION}/v2/entities",
             json=entity, headers=FS_HEADERS, timeout=5)
         logging.info(f"POST {entity.get('id','')} → {r.status_code}")
@@ -89,7 +98,7 @@ def _update_attrs(eid, datos):
         attrs[k] = v
     attrs["timestamp"] = datetime.now(timezone.utc).isoformat()
     try:
-        r = requests.patch(
+        r = _session.patch(
             f"{ORION}/v2/entities/{eid}/attrs?options=keyValues",
             json=attrs, headers=FS_HEADERS, timeout=5)
         if r.status_code in (200, 204):
@@ -133,7 +142,7 @@ def _downlink(sensor_id, bytes_list):
         "priority":    "NORMAL"
     }]}
     try:
-        r = requests.post(url, json=body, headers=hdrs, timeout=5)
+        r = _session.post(url, json=body, headers=hdrs, timeout=5)
         logging.info(f"Downlink {device} {bytes_list} → {r.status_code}")
     except Exception as e:
         logging.error(f"Downlink error {device}: {e}")
@@ -145,10 +154,10 @@ def _push_whitelist_downlink():
     Máximo 24 UIDs por limitación del payload LoRaWAN (51 bytes disponibles).
     """
     try:
-        r = requests.get(
+        r = _session.get(
             f"{ORION}/v2/entities/Sensor:s2/attrs/nfcAuthorizedUIDs/value",
             headers={k: v for k, v in FS_HEADERS.items() if k != 'Content-Type'},
-            timeout=3)
+            timeout=5)
         if r.status_code != 200:
             return
         uids = [u.strip() for u in r.text.strip().strip('"').split(',') if u.strip()]
@@ -219,10 +228,10 @@ def r_nfc(d, sid):
 
     # Obtener UIDs autorizados de Orion en tiempo real
     try:
-        r = requests.get(
+        r = _session.get(
             f"{ORION}/v2/entities/Sensor:s2/attrs/nfcAuthorizedUIDs/value",
             headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
-            timeout=3)
+            timeout=5)
         uids = set(r.text.strip().strip('"').split(',')) if r.status_code == 200 \
                else NFC_AUTHORIZED
     except Exception:
@@ -365,7 +374,7 @@ def health():
 @app.route("/alerts", methods=["GET"])
 def alerts():
     try:
-        r = requests.get(
+        r = _session.get(
             f"{ORION}/v2/entities?type=Alert&q=active==true&options=keyValues",
             headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
             timeout=5)
@@ -377,7 +386,7 @@ def alerts():
 @app.route("/api/alertas", methods=["GET"])
 def api_alertas():
     try:
-        r = requests.get(
+        r = _session.get(
             f"{ORION}/v2/entities?type=Alert&options=keyValues&limit=100",
             headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
             timeout=5)
@@ -393,7 +402,7 @@ def api_alertas():
 @app.route("/api/access-log", methods=["GET"])
 def api_access_log():
     try:
-        r = requests.get(
+        r = _session.get(
             f"{ORION}/v2/entities?type=AccessLog&options=keyValues&limit=50",
             headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
             timeout=5)
@@ -408,7 +417,7 @@ def api_access_log():
 @app.route("/api/nodos", methods=["GET"])
 def api_nodos():
     try:
-        r = requests.get(
+        r = _session.get(
             f"{ORION}/v2/entities?type=Sensor&options=keyValues",
             headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
             timeout=5)
@@ -429,7 +438,7 @@ def api_status():
 @app.route("/api/nfc/uids", methods=["GET"])
 def api_get_uids():
     try:
-        r = requests.get(
+        r = _session.get(
             f"{ORION}/v2/entities/Sensor:s2/attrs/nfcAuthorizedUIDs/value",
             headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
             timeout=5)
@@ -448,10 +457,10 @@ def api_add_uid():
     if not uid:
         return jsonify({"error": "UID is required"}), 400
     try:
-        r = requests.get(
+        r = _session.get(
             f"{ORION}/v2/entities/Sensor:s2/attrs/nfcAuthorizedUIDs/value",
             headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
-            timeout=3)
+            timeout=5)
         uids = set(r.text.strip().strip('"').split(',')) if r.status_code == 200 else set(NFC_AUTHORIZED)
         uids.add(uid)
         _patch("Sensor:s2", {"nfcAuthorizedUIDs": {"type": "Text", "value": ",".join(uids)}})
@@ -464,10 +473,10 @@ def api_add_uid():
 def api_delete_uid(uid):
     uid = uid.strip().upper()
     try:
-        r = requests.get(
+        r = _session.get(
             f"{ORION}/v2/entities/Sensor:s2/attrs/nfcAuthorizedUIDs/value",
             headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
-            timeout=3)
+            timeout=5)
         uids = set(r.text.strip().strip('"').split(',')) if r.status_code == 200 else set(NFC_AUTHORIZED)
         if uid in uids:
             uids.remove(uid)
@@ -494,4 +503,4 @@ if __name__ == "__main__":
     logging.info(f"TTN App: {TTN_APP_ID}")
     if "XXXXXXXXXX" in TTN_API_KEY:
         logging.warning("TTN_API_KEY no configurada — downlinks desactivados")
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
