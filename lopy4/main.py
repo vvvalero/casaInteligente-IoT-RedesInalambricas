@@ -359,18 +359,24 @@ while True:
 
         sistema_transmitiendo()
         s.setblocking(True)
+        s.settimeout(2.5)
         s.send(payload)
         print('  Uplink enviado')
 
-        s.setblocking(False)
-        data = s.recv(64)
-
-        if data:
-            print('  Downlink: {}'.format(
-                binascii.hexlify(data).decode('utf-8').upper()))
-            _procesar_downlink(data)
-        else:
-            print('  Sin downlink')
+        try:
+            data = s.recv(64)
+            if data:
+                print('  Downlink: {}'.format(
+                    binascii.hexlify(data).decode('utf-8').upper()))
+                _procesar_downlink(data)
+            else:
+                print('  Sin downlink (buffer vacío)')
+                sistema_conectado()
+        except socket.timeout:
+            print('  Sin downlink (timeout RX)')
+            sistema_conectado()
+        except Exception as e:
+            print('  Error recibiendo: {}'.format(e))
             sistema_conectado()
 
         # Breve pausa entre envíos en ráfaga para no saturar el stack LoRa

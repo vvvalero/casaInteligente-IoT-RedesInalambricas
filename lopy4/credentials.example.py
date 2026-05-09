@@ -22,8 +22,14 @@ APP_KEY = binascii.unhexlify('XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX')
 NODE_TYPE = 'salon'
 
 # Intervalo entre envíos en segundos
-# Pruebas: 60  |  Producción: 900
-TX_INTERVAL = 60
+# LoRaWAN Fair Use Policy (TTN):
+#   - Máx 30 segundos de airtime por día
+#   - Con payloads ~30 bytes @ SF9, cada uplink ~1.5s
+#   - TX_INTERVAL=30s → ~48 min airtime/día (dentro de límites)
+#   - TX_INTERVAL=20s → ~72 min airtime/día (excede límites)
+#   - TX_INTERVAL=60s → ~24 min airtime/día (muy conservador)
+# Recomendado: 30 segundos para respuesta rápida a eventos
+TX_INTERVAL = 30
 
 # MAC del ESP32-NFC (solo para NODE_TYPE='dormitorio')
 # Consúltala en el Monitor Serie del ESP32 tras el primer arranque:

@@ -132,7 +132,9 @@ Edita `credentials.py` con los valores de TTN y el tipo de nodo:
 APP_EUI     = binascii.unhexlify('TU_APP_EUI_SIN_ESPACIOS')
 APP_KEY     = binascii.unhexlify('TU_APP_KEY_SIN_ESPACIOS')
 NODE_TYPE   = 'salon'      # 'salon' | 'dormitorio' | 'exterior'
-TX_INTERVAL = 60           # segundos entre envíos
+TX_INTERVAL = 30           # segundos entre envíos (respuesta rápida a eventos)
+                           # TTN Fair Use: 30s = ~48 min airtime/día (OK)
+                           # Opciones: 20s (rápido), 30s (recomendado), 60s (lento)
 
 # Solo para el nodo dormitorio — ver Paso 6b
 ESP32_NFC_MAC = 'AA:BB:CC:DD:EE:FF'
