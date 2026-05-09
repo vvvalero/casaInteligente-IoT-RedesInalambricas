@@ -105,7 +105,7 @@ function generateRoofTileColorMap(w = 512, h = 512) {
     canvas.height = h;
     const ctx = canvas.getContext('2d');
 
-    ctx.fillStyle = '#6b3d25';
+    ctx.fillStyle = '#8a4520';
     ctx.fillRect(0, 0, w, h);
 
     const tileW = w / 6;
@@ -113,21 +113,27 @@ function generateRoofTileColorMap(w = 512, h = 512) {
 
     for (let y = 0; y < 10; y++) {
         const offset = (y % 2) * (tileW / 2);
+        // Vary row color for more visual interest
+        const rowHue = 8 + (y % 3) * 8; // varies between hues for different rows
+
         for (let x = 0; x < 10; x++) {
             const posX = x * tileW + offset;
             const posY = y * tileH;
 
-            // Tile base color with variation
-            const variation = 0.9 + Math.random() * 0.15;
-            ctx.fillStyle = `hsl(15, 70%, ${35 * variation}%)`;
+            // Tile base color - warm terracotta variations
+            const variation = 0.85 + Math.random() * 0.25;
+            const tileHue = rowHue + Math.random() * 12;
+            const saturation = 70 + Math.random() * 15;
+            const lightness = 38 + Math.random() * 14;
+            ctx.fillStyle = `hsl(${tileHue}, ${saturation}%, ${lightness}%)`;
             ctx.fillRect(posX, posY, tileW - 2, tileH);
 
-            // Shadow at bottom of tile
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            // Shadow at bottom of tile - deeper
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
             ctx.fillRect(posX, posY + tileH - 3, tileW - 2, 3);
 
-            // Highlight at top
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            // Highlight at top - warmer
+            ctx.fillStyle = 'rgba(255, 200, 100, 0.15)';
             ctx.fillRect(posX, posY, tileW - 2, 2);
         }
     }
@@ -161,17 +167,21 @@ function generateRoofTileNormalMap(w = 512, h = 512) {
             const posX = x * tileW + offset;
             const posY = y * tileH;
 
-            // Curved surface (side edges pointing outward)
+            // Curved surface with better relief (side edges pointing outward)
             for (let i = 0; i < tileW - 2; i++) {
-                const intensity = Math.abs((tileW / 2 - i) / (tileW / 2)) * 20;
+                const intensity = Math.abs((tileW / 2 - i) / (tileW / 2)) * 25;
                 const rVal = Math.min(255, 128 + intensity);
                 ctx.fillStyle = `rgb(${rVal}, 128, 255)`;
                 ctx.fillRect(posX + i, posY, 1, tileH);
             }
 
-            // Shadow at bottom
-            ctx.fillStyle = 'rgb(100, 100, 200)';
-            ctx.fillRect(posX, posY + tileH - 2, tileW - 2, 2);
+            // Deep shadow at bottom for more depth
+            ctx.fillStyle = 'rgb(95, 95, 190)';
+            ctx.fillRect(posX, posY + tileH - 3, tileW - 2, 3);
+
+            // Highlight at top edge
+            ctx.fillStyle = 'rgb(150, 150, 255)';
+            ctx.fillRect(posX, posY, tileW - 2, 1);
         }
     }
 
@@ -733,8 +743,8 @@ function createRoof(width, depth) {
         color: 0xffffff,
         map: generateRoofTileColorMap(),
         normalMap: generateRoofTileNormalMap(),
-        roughness: 0.9,
-        metalness: 0.03,
+        roughness: 0.85,
+        metalness: 0.02,
     });
 
     const overhang = 0.5;
