@@ -42,7 +42,8 @@
                     <h3>UIDs Autorizados</h3>
                     <div class="uid-list" id="uid-list">Cargando...</div>
                     <form id="add-uid-form" style="margin-top: 15px;">
-                        <input type="text" id="new-uid" placeholder="Nuevo UID (ej. A1B2C3D4)" required>
+                        <input type="text" id="new-uid" placeholder="Nuevo UID en hex (ej. C3D4 o A1B2C3D4)" required>
+                        <small style="display: block; color: var(--text-muted); margin-top: 0.5rem;">Se guardarán los últimos 4 caracteres hexadecimales</small>
                         <button type="submit" class="btn-primary">Añadir UID</button>
                     </form>
                 </section>

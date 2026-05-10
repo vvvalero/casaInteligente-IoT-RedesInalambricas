@@ -340,6 +340,12 @@ async function sendBlink(nodoId) {
 }
 
 // ---------------- Accesos NFC ----------------
+function normalizeUID(uid) {
+    const cleaned = uid.toUpperCase().replace(/[^0-9A-F]/g, '');
+    if (cleaned.length === 0) return null;
+    return cleaned.slice(-4);
+}
+
 async function fetchUIDs() {
     if (!document.getElementById('uid-list')) return;
     try {
@@ -361,26 +367,33 @@ async function fetchUIDs() {
 }
 
 async function addUID(uid) {
+    const normalized = normalizeUID(uid);
+    if (!normalized) {
+        alert("UID inválido. Debe contener al menos un carácter hexadecimal (0-9, A-F)");
+        return;
+    }
     try {
-        await fetch(`${API_BASE}/nfc/uids`, {
+        const res = await fetch(`${API_BASE}/nfc/uids`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({uid: uid})
+            body: JSON.stringify({uid: normalized})
         });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         document.getElementById('new-uid').value = '';
         fetchUIDs();
     } catch(e) {
-        alert("Error al registrar la nueva tarjeta");
+        alert("Error al registrar la tarjeta: " + e.message);
     }
 }
 
 async function deleteUID(uid) {
     if(!confirm(`¿Revocar acceso a la tarjeta con código ${uid}?`)) return;
     try {
-        await fetch(`${API_BASE}/nfc/uids/${uid}`, { method: 'DELETE' });
+        const res = await fetch(`${API_BASE}/nfc/uids/${uid}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         fetchUIDs();
     } catch(e) {
-        alert("Error al revocar la tarjeta");
+        alert("Error al revocar la tarjeta: " + e.message);
     }
 }
 
