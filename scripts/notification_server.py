@@ -9,10 +9,17 @@
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import requests, json, logging, base64, time, os, re
+import requests, json, logging, base64, time, os, re, asyncio, threading
 from datetime import datetime, timezone
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+try:
+    from bleak import BleakClient
+    BLEAK_AVAILABLE = True
+except ImportError:
+    BLEAK_AVAILABLE = False
+    logging.warning("bleak no instalada. Control BLE de LEDs desactivado. Instala: pip install bleak")
 
 app = Flask(__name__)
 CORS(app)
@@ -25,6 +32,341 @@ retry_strategy = Retry(total=2, status_forcelist=[429, 500, 502, 503, 504], allo
 adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=20, pool_maxsize=20)
 _session.mount("http://", adapter)
 _session.mount("https://", adapter)
+
+# ============================================================
+# BLE LED CLIENT (Control de ESP32)
+# ============================================================
+class BLELEDClient:
+    """Cliente BLE para controlar LEDs del ESP32"""
+    def __init__(self, device_name="ESP32-NFC-Door"):
+        self.device_name = device_name
+        self.address = None
+        self.client = None
+        self.loop = None
+        self.char_uuid = "b1d2e3f4-5a6b-7c8d-9e0f-a1b2c3d4e5f6"
+        self.connected = False
+        self._lock = threading.Lock()
+        self._running = True
+        self._reconnect_attempts = 0
+        self._max_reconnect_attempts = 5
+
+    async def _find_device(self):
+        """Busca el ESP32 por nombre"""
+        try:
+            from bleak import BleakScanner
+            devices = await BleakScanner.discover(timeout=5.0)
+            for device in devices:
+                if self.device_name in (device.name or ""):
+                    self.address = device.address
+                    logging.info(f"[BLE] ESP32 encontrado: {self.address}")
+                    return True
+            logging.warning(f"[BLE] {self.device_name} no encontrado")
+            return False
+        except Exception as e:
+            logging.error(f"[BLE] Error buscando dispositivo: {e}")
+            return False
+
+    async def connect(self):
+        """Conecta al ESP32"""
+        if not BLEAK_AVAILABLE:
+            return False
+        try:
+            if not self.address:
+                if not await self._find_device():
+                    return False
+            self.client = BleakClient(self.address)
+            await self.client.connect()
+            self.connected = True
+            logging.info(f"[BLE] Conectado a {self.device_name}")
+
+            # Enviar comandos pendientes de la cola
+            try:
+                await asyncio.sleep(0.5)
+                loop = asyncio.get_event_loop()
+                loop.call_soon_threadsafe(_flush_led_queue)
+            except:
+                pass
+
+            return True
+        except Exception as e:
+            logging.error(f"[BLE] Error conectando: {e}")
+            self.connected = False
+            return False
+
+    async def disconnect(self):
+        """Desconecta del ESP32"""
+        try:
+            if self.client and self.connected:
+                await self.client.disconnect()
+                self.connected = False
+                logging.info("[BLE] Desconectado")
+        except Exception as e:
+            logging.error(f"[BLE] Error desconectando: {e}")
+
+    async def send_led_command(self, led_id, red_on, green_on):
+        """Envía comando de LED simple: [led_id][red_on][green_on]"""
+        if not self.connected or not self.client:
+            return False
+        try:
+            command = bytes([led_id, 1 if red_on else 0, 1 if green_on else 0])
+            state = "AMARILLO" if (red_on and green_on) else ("ROJO" if red_on else "VERDE")
+            await self.client.write_gatt_char(self.char_uuid, command)
+            logging.info(f"[BLE] Indicador {led_id} → {state}")
+            return True
+        except Exception as e:
+            logging.error(f"[BLE] Error escribiendo LED: {e}")
+            self.connected = False
+            return False
+
+    def run_in_thread(self):
+        """Ejecuta el loop async en un thread con reconexión automática"""
+        try:
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+
+            self.loop.run_until_complete(self._reconnect_loop())
+
+        except Exception as e:
+            logging.error(f"[BLE] Error fatal en thread: {e}")
+        finally:
+            if self.loop:
+                self.loop.close()
+            self._running = False
+
+    async def _reconnect_loop(self):
+        """Loop asíncrono de reconexión"""
+        reconnect_delay = 1
+        while self._running:
+            try:
+                if not self.connected:
+                    logging.info(f"[BLE] Intentando conectar... (intento {self._reconnect_attempts + 1})")
+                    if await self.connect():
+                        self._reconnect_attempts = 0
+                        reconnect_delay = 1
+                    else:
+                        self._reconnect_attempts += 1
+                        if self._reconnect_attempts >= self._max_reconnect_attempts:
+                            logging.error(f"[BLE] Máximo de intentos alcanzado ({self._max_reconnect_attempts})")
+                            reconnect_delay = 30
+                        else:
+                            reconnect_delay = min(reconnect_delay * 2, 10)
+
+                await asyncio.sleep(reconnect_delay)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logging.error(f"[BLE] Error en loop de reconexión: {e}")
+                await asyncio.sleep(5)
+
+    def stop(self):
+        """Detiene el thread BLE de forma segura"""
+        self._running = False
+        if self.loop:
+            try:
+                self.loop.call_soon_threadsafe(lambda: None)
+            except:
+                pass
+
+    def send_led(self, led_id, red_on, green_on):
+        """Interfaz sync para enviar LED con reintento"""
+        if not BLEAK_AVAILABLE:
+            return False
+
+        try:
+            if not self.loop or not self.loop.is_running():
+                return False
+
+            for attempt in range(2):
+                try:
+                    future = asyncio.run_coroutine_threadsafe(
+                        self.send_led_command(led_id, red_on, green_on), self.loop)
+                    result = future.result(timeout=2)
+                    if result:
+                        return True
+                except asyncio.TimeoutError:
+                    logging.warning(f"[BLE] Timeout enviando indicador {led_id}")
+                except Exception as e:
+                    logging.debug(f"[BLE] Error intento {attempt + 1}: {e}")
+
+                if attempt == 0 and not self.connected:
+                    logging.warning(f"[BLE] Desconectado, reintentando...")
+                    time.sleep(0.5)
+
+        except Exception as e:
+            logging.error(f"[BLE] Error enviando LED: {e}")
+
+        return False
+
+
+# Cliente BLE global
+_ble_client = None
+
+def _init_ble_client():
+    """Inicializa el cliente BLE en un thread"""
+    global _ble_client
+    if not BLEAK_AVAILABLE:
+        logging.warning("[BLE] bleak no disponible, LEDs desactivados")
+        return
+    try:
+        _ble_client = BLELEDClient()
+        ble_thread = threading.Thread(target=_ble_client.run_in_thread, daemon=True)
+        ble_thread.start()
+        logging.info("[BLE] Cliente BLE iniciando...")
+    except Exception as e:
+        logging.error(f"[BLE] Error inicializando: {e}")
+
+_led_command_queue = []
+_led_queue_lock = threading.Lock()
+_LED_QUEUE_MAX_SIZE = 50  # Límite para evitar OOM
+
+def _send_led(led_id, red_on, green_on):
+    """Envía comando de LED al ESP32 vía BLE con cola de respaldo (máx 50 comandos)"""
+    global _led_command_queue
+
+    if not BLEAK_AVAILABLE or not _ble_client:
+        return False
+
+    # Intentar enviar directamente
+    if _ble_client.send_led(led_id, red_on, green_on):
+        # Éxito, limpiar comandos de la cola para este LED (deduplicación)
+        with _led_queue_lock:
+            _led_command_queue = [(id, r, g) for id, r, g in _led_command_queue if id != led_id]
+        return True
+
+    # Si falla y no está conectado, agregar a cola (con límite de tamaño)
+    if not _ble_client.connected:
+        with _led_queue_lock:
+            # Remover comando anterior del mismo LED (deduplicación)
+            _led_command_queue = [(id, r, g) for id, r, g in _led_command_queue if id != led_id]
+
+            # Agregar nuevo comando si hay espacio
+            if len(_led_command_queue) < _LED_QUEUE_MAX_SIZE:
+                _led_command_queue.append((led_id, red_on, green_on))
+                logging.debug(f"[BLE] Comando indicador {led_id} agregado a cola (desconectado, {len(_led_command_queue)}/{_LED_QUEUE_MAX_SIZE})")
+            else:
+                logging.warning(f"[BLE] Cola de LEDs llena ({_LED_QUEUE_MAX_SIZE}), descartando indicador {led_id}")
+        return False
+
+    return False
+
+def _flush_led_queue():
+    """Envía todos los comandos pendientes de la cola"""
+    global _led_command_queue
+
+    if not _ble_client or not _ble_client.connected:
+        return 0
+
+    with _led_queue_lock:
+        if not _led_command_queue:
+            return 0
+
+        queue_copy = _led_command_queue.copy()
+        _led_command_queue.clear()
+
+    sent = 0
+    for led_id, red_on, green_on in queue_copy:
+        if _ble_client.send_led(led_id, red_on, green_on):
+            sent += 1
+        else:
+            with _led_queue_lock:
+                _led_command_queue.append((led_id, red_on, green_on))
+
+    if sent > 0:
+        logging.info(f"[BLE] {sent} comandos enviados desde cola")
+
+    return sent
+
+
+# ============================================================
+# GESTOR DE ESTADO GLOBAL DE LEDs
+# ============================================================
+class LEDStateManager:
+    """Gestiona estado de alertas y LEDs por nodo y tipo"""
+
+    def __init__(self):
+        self.node_alerts = {
+            "Sensor:s1": set(),
+            "Sensor:s2": set(),
+            "Sensor:s3": set()
+        }
+        self.type_alerts = {
+            "temp": set(),
+            "pressure": set(),
+            "humidity": set()
+        }
+        self._lock = threading.Lock()
+
+    def add_alert(self, sensor_id, alert_type):
+        """Agrega alerta para un nodo/tipo"""
+        with self._lock:
+            if sensor_id in self.node_alerts:
+                self.node_alerts[sensor_id].add(alert_type)
+            if alert_type in self.type_alerts:
+                self.type_alerts[alert_type].add(sensor_id)
+            led_updates = self._calculate_led_colors()
+
+        # Enviar LEDs sin tener el lock (evita bloqueo de I/O dentro del lock)
+        for led_id, r, g, b in led_updates:
+            _send_led(led_id, r, g, b)
+
+    def remove_alert(self, sensor_id, alert_type):
+        """Elimina alerta para un nodo/tipo"""
+        with self._lock:
+            if sensor_id in self.node_alerts:
+                self.node_alerts[sensor_id].discard(alert_type)
+            if alert_type in self.type_alerts:
+                self.type_alerts[alert_type].discard(sensor_id)
+            led_updates = self._calculate_led_colors()
+
+        # Enviar LEDs sin tener el lock (evita bloqueo de I/O dentro del lock)
+        for led_id, r, g, b in led_updates:
+            _send_led(led_id, r, g, b)
+
+    def _calculate_led_colors(self):
+        """Calcula qué LEDs deben estar on/off según estado actual.
+        DEBE ser llamado DENTRO del lock. Devuelve lista de (led_id, red_on, green_on) tuplas."""
+        updates = []
+
+        # Indicadores 1-3: Estado por nodo
+        for i, sensor_id in enumerate(["Sensor:s1", "Sensor:s2", "Sensor:s3"], 1):
+            if self.node_alerts[sensor_id]:
+                updates.append((i, True, False))  # Rojo (alerta)
+            else:
+                updates.append((i, False, True))  # Verde (OK)
+
+        # Indicadores 4-6: Alertas por tipo
+        alert_leds = {
+            "temp": 4,
+            "pressure": 5,
+            "humidity": 6
+        }
+        for alert_type, led_id in alert_leds.items():
+            if self.type_alerts[alert_type]:
+                count = len(self.type_alerts[alert_type])
+                if count >= 2:
+                    updates.append((led_id, True, True))  # Amarillo (crítico, ambos encendidos)
+                else:
+                    updates.append((led_id, True, False))  # Rojo (alerta)
+            else:
+                updates.append((led_id, False, True))  # Verde (OK)
+
+        # Indicador 7: Sistema general
+        all_alerts = set()
+        for alerts in self.node_alerts.values():
+            all_alerts.update(alerts)
+
+        if "nfc_denied" in all_alerts or "vibration" in all_alerts:
+            updates.append((7, True, False))  # Rojo (crítico)
+        elif all_alerts:
+            updates.append((7, True, True))  # Amarillo (warning, ambos encendidos)
+        else:
+            updates.append((7, False, True))  # Verde (OK)
+
+        return updates
+
+
+_led_manager = LEDStateManager()
+
 
 # ============================================================
 # CONFIG
@@ -207,37 +549,61 @@ def _push_whitelist_downlink():
 
 def r_temp_alta(d, sid):
     t = d.get("temperature")
-    if t is None or t <= 28:
+    if t is None:
         return
-    logging.warning(f"Temp alta {t}C en {sid}")
-    _alerta("temp_high", True, f"Temperatura alta: {t}C", "warning", sid)
-    _downlink(sid, [0x06, 0x01])
+    if t > 28:
+        logging.warning(f"Temp alta {t}C en {sid}")
+        _alerta("temp_high", True, f"Temperatura alta: {t}C", "warning", sid)
+        _downlink(sid, [0x06, 0x01])
+        _led_manager.add_alert(sid, "temp")
+    else:
+        _alerta("temp_high", False, "", "info", sid)
+        _downlink(sid, [0x06, 0x02])
+        _led_manager.remove_alert(sid, "temp")
 
 
 def r_temp_baja(d, sid):
     t = d.get("temperature")
-    if t is None or t >= 10:
+    if t is None:
         return
-    logging.warning(f"Temp baja {t}C en {sid}")
-    _alerta("temp_low", True, f"Temperatura baja: {t}C", "warning", sid)
-    _downlink(sid, [0x06, 0x00])
+    if t < 10:
+        logging.warning(f"Temp baja {t}C en {sid}")
+        _alerta("temp_low", True, f"Temperatura baja: {t}C", "warning", sid)
+        _downlink(sid, [0x06, 0x00])
+        _led_manager.add_alert(sid, "temp")
+    else:
+        _alerta("temp_low", False, "", "info", sid)
+        _downlink(sid, [0x06, 0x02])
+        _led_manager.remove_alert(sid, "temp")
 
 
 def r_humedad(d, sid):
     h = d.get("humidity")
-    if h is None or h <= 80:
+    if h is None:
         return
-    logging.warning(f"Humedad alta {h}% en {sid}")
-    _alerta("humidity", True, f"Humedad excesiva: {h}%", "warning", sid)
+    if h > 80:
+        logging.warning(f"Humedad alta {h}% en {sid}")
+        _alerta("humidity", True, f"Humedad excesiva: {h}%", "warning", sid)
+        _downlink(sid, [0x06, 0x03])
+        _led_manager.add_alert(sid, "humidity")
+    else:
+        _alerta("humidity", False, "", "info", sid)
+        _downlink(sid, [0x06, 0x02])
+        _led_manager.remove_alert(sid, "humidity")
 
 
 def r_vibracion(d, sid):
-    if not d.get("vibrationDetected", False):
-        return
-    mag = d.get("accelerationMagnitude", 0)
-    logging.warning(f"Vibracion {mag:.2f}g en {sid}")
-    _alerta("vibration", True, f"Vibracion: {mag:.2f}g", "critical", sid)
-    _downlink(sid, [0x01, 255, 0, 255])
+    vibration_detected = d.get("vibrationDetected", False)
+    if vibration_detected:
+        mag = d.get("accelerationMagnitude", 0)
+        logging.warning(f"Vibracion {mag:.2f}g en {sid}")
+        _alerta("vibration", True, f"Vibracion: {mag:.2f}g", "critical", sid)
+        _downlink(sid, [0x01, 255, 0, 255])
+        _led_manager.add_alert(sid, "vibration")
+    else:
+        _alerta("vibration", False, "", "info", sid)
+        _downlink(sid, [0x01, 0, 255, 0])
+        _led_manager.remove_alert(sid, "vibration")
 
 
 def r_nfc(d, sid):
@@ -277,9 +643,11 @@ def r_nfc(d, sid):
     if authorized:
         _alerta("nfc_denied", False, "", "info", sid)
         _downlink(sid, [0x03])
+        _led_manager.remove_alert(sid, "nfc_denied")
     else:
         _alerta("nfc_denied", True, f"Acceso denegado UID={uid}", "critical", sid)
         _downlink(sid, [0x04])
+        _led_manager.add_alert(sid, "nfc_denied")
 
 
 def r_aforo(d, sid):
@@ -289,26 +657,38 @@ def r_aforo(d, sid):
     if n > AFORO_MAX:
         logging.warning(f"Aforo superado: {n} BLE en {sid}")
         _alerta("aforo", True, f"Aforo: {n} dispositivos BLE", "warning", sid)
-        _downlink(sid, [0x05])
+        _downlink(sid, [0x05, 0x01])
     else:
         _alerta("aforo", False, "", "info", sid)
+        _downlink(sid, [0x05, 0x00])
 
 
 def r_lux_exterior(d, sid):
     lux = d.get("luminosity")
-    if lux is None or lux >= 50:
+    if lux is None:
         return
-    logging.info(f"Lux exterior baja: {lux} en {sid}")
-    _downlink(sid, [0x07])
+    if lux < 50:
+        logging.warning(f"Lux exterior baja: {lux} en {sid}")
+        _alerta("lux_low", True, f"Luz baja: {lux} lx", "warning", sid)
+        _downlink(sid, [0x07, 0x01])
+    else:
+        _alerta("lux_low", False, "", "info", sid)
+        _downlink(sid, [0x07, 0x00])
 
 
 def r_presion(d, sid):
     p = d.get("barometricPressure")
-    if p is None or p >= 950:   # 950 hPa umbral para Albacete (~700m altitud)
+    if p is None:
         return
-    logging.warning(f"Presion baja: {p} hPa en {sid}")
-    _alerta("pressure_low", True, f"Presion baja: {p} hPa", "warning", sid)
-    _downlink(sid, [0x02, 255, 0, 0])
+    if p < 950:
+        logging.warning(f"Presion baja: {p} hPa en {sid}")
+        _alerta("pressure_low", True, f"Presion baja: {p} hPa", "warning", sid)
+        _downlink(sid, [0x02, 255, 0, 0])
+        _led_manager.add_alert(sid, "pressure")
+    else:
+        _alerta("pressure_low", False, "", "info", sid)
+        _downlink(sid, [0x02, 0, 255, 0])
+        _led_manager.remove_alert(sid, "pressure")
 
 
 TODAS_REGLAS = [
@@ -555,4 +935,7 @@ if __name__ == "__main__":
     logging.info(f"TTN App: {TTN_APP_ID}")
     if "XXXXXXXXXX" in TTN_API_KEY:
         logging.warning("TTN_API_KEY no configurada — downlinks desactivados")
+
+    _init_ble_client()
+
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)

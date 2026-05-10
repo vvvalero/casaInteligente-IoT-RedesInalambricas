@@ -1,13 +1,14 @@
-// nfc_ble_broadcaster.ino — ESP32 como puente NFC → BLE Advertising (cola)
+// nfc_ble_broadcaster.ino — ESP32 como puente NFC → BLE + Control de LEDs simples
 // ============================================================
 // Rol en la arquitectura:
 //   1. Lee UIDs de tarjetas ISO14443A con un PN532 por I²C
 //   2. Los acumula en una cola FIFO de hasta MAX_QUEUE entradas
-//   3. Publica toda la cola en el Manufacturer Specific Data BLE
-//   4. Cada entrada expira individualmente tras UID_TTL_MS ms
+//   3. Publica toda la cola en BLE Advertising (Manufacturer Specific Data)
+//   4. Expone servicio BLE para recibir comandos de control de LEDs
+//   5. Controla 7 indicadores con LEDs simples (on/off): 14 GPIO totales
 //
-// El LoPy4 del dormitorio lee la cola completa en un solo escaneo
-// y envía un uplink LoRaWAN por cada UID pendiente.
+// El LoPy4 del dormitorio lee la cola NFC vía BLE escaneo.
+// El notification_server.py envía comandos de LED vía BLE client.
 //
 // Formato Manufacturer Specific Data (tipo 0xFF en advertising):
 //   [0x34][0x12]       ← Company ID 0x1234 (little-endian, personalizado)
@@ -17,16 +18,14 @@
 //   [len2][uid2...]    ← Segundo UID (si existe)
 //   ...
 //
-// Presupuesto de bytes (payload BLE máx. 31):
-//   Flags AD:    3 bytes  (02 01 06)
-//   Mfr AD hdr:  2 bytes  (length + 0xFF)
-//   Company ID:  2 bytes
-//   "NFC":       3 bytes
-//   count:       1 byte
-//   ──────────────────────────────────────
-//   Disponible para UIDs: 20 bytes
-//   UIDs de 4 bytes: hasta 4  (5 bytes c/u con prefijo longitud)
-//   UIDs de 7 bytes: hasta 2  (8 bytes c/u con prefijo longitud)
+// Comando BLE LED (característica escribible):
+//   [led_id][red_on][green_on]
+//   led_id: 1-7 (qué indicador)
+//   red_on: 0 o 1 (encender LED rojo)
+//   green_on: 0 o 1 (encender LED verde)
+//   Ejemplo: [1, 0, 1] = indicador 1 verde (OK)
+//            [1, 1, 0] = indicador 1 rojo (alerta)
+//            [1, 1, 1] = indicador 1 amarillo (crítico, ambos encendidos)
 //
 // Librerías necesarias (Library Manager de Arduino IDE):
 //   - "PN532" de Elechouse (elechouse/PN532)
@@ -39,13 +38,24 @@
 //   PN532 GND → GND
 //   PN532 RST → GPIO 32  (opcional, recomendado)
 //   PN532 DIP: SW1=OFF, SW2=ON  (modo I²C)
+//
+// Pines LED simples (2 pines por indicador: rojo y verde):
+//   Indicador 1 (Nodo s1):     R=GPIO 25, G=GPIO 26
+//   Indicador 2 (Nodo s2):     R=GPIO 12, G=GPIO 13
+//   Indicador 3 (Nodo s3):     R=GPIO 15, G=GPIO 2
+//   Indicador 4 (Temperatura): R=GPIO 5,  G=GPIO 18
+//   Indicador 5 (Presión):     R=GPIO 19, G=GPIO 23
+//   Indicador 6 (Humedad):     R=GPIO 24, G=GPIO 9
+//   Indicador 7 (Sistema):     R=GPIO 10, G=GPIO 11
 // ============================================================
 
 #include <Wire.h>
 #include <PN532_I2C.h>
 #include <PN532.h>
 #include <BLEDevice.h>
-#include <BLEAdvertising.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
 
 // --- Configuración de hardware ---
 #define NFC_RST_PIN 32
@@ -54,12 +64,93 @@
 #define COMPANY_ID_LOW  0x34
 #define COMPANY_ID_HIGH 0x12
 
-// Entradas máximas en la cola (limitado por los 20 bytes libres del payload)
+// Service y Characteristic UUIDs para control de LEDs
+#define LED_SERVICE_UUID        "a6e3ed8d-6a2f-4a8b-9b8c-1c9f8e7d6c5b"
+#define LED_COMMAND_CHAR_UUID   "b1d2e3f4-5a6b-7c8d-9e0f-a1b2c3d4e5f6"
+
+// Entradas máximas en la cola
 #define MAX_QUEUE 4
 
-// Tiempo que un UID permanece en la cola tras su última lectura (ms).
-// Debe ser mayor que TX_INTERVAL del LoPy4 (60 s).
+// Tiempo que un UID permanece en la cola
 #define UID_TTL_MS 90000
+
+// --- Pines de LEDs simples (rojo y verde por indicador) ---
+struct LEDPins {
+    uint8_t red, green;
+};
+
+const LEDPins ledPins[7] = {
+    {25, 26},   // Indicador 1: Nodo s1 (Salón)
+    {12, 13},   // Indicador 2: Nodo s2 (Dormitorio)
+    {15, 2},    // Indicador 3: Nodo s3 (Exterior)
+    {5, 18},    // Indicador 4: Temperatura (agregado)
+    {19, 23},   // Indicador 5: Presión (agregado)
+    {24, 9},    // Indicador 6: Humedad (agregado)
+    {10, 11}    // Indicador 7: Sistema general
+};
+
+// ============================================================
+// CONTROL DE LEDs
+// ============================================================
+struct LEDState {
+    bool red;
+    bool green;
+};
+
+LEDState ledStates[7] = {
+    {false, true},   // Indicador 1: Verde (OK)
+    {false, true},   // Indicador 2: Verde (OK)
+    {false, true},   // Indicador 3: Verde (OK)
+    {false, true},   // Indicador 4: Verde (OK)
+    {false, true},   // Indicador 5: Verde (OK)
+    {false, true},   // Indicador 6: Verde (OK)
+    {false, true}    // Indicador 7: Verde (OK)
+};
+
+static void _setLEDState(int ledIndex, bool red, bool green) {
+    if (ledIndex < 0 || ledIndex >= 7) return;
+
+    ledStates[ledIndex].red = red;
+    ledStates[ledIndex].green = green;
+
+    digitalWrite(ledPins[ledIndex].red, red ? HIGH : LOW);
+    digitalWrite(ledPins[ledIndex].green, green ? HIGH : LOW);
+
+    Serial.print("[LED] Indicador ");
+    Serial.print(ledIndex + 1);
+    Serial.print(" → ");
+    if (red && green) {
+        Serial.println("AMARILLO (crítico)");
+    } else if (red) {
+        Serial.println("ROJO (alerta)");
+    } else if (green) {
+        Serial.println("VERDE (OK)");
+    } else {
+        Serial.println("APAGADO");
+    }
+}
+
+// ============================================================
+// BLE CALLBACKS
+// ============================================================
+class LEDCommandCallback : public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic* pCharacteristic) {
+        std::string value = pCharacteristic->getValue();
+        if (value.length() < 3) return;
+
+        uint8_t ledIndex = (uint8_t)value[0] - 1;
+        uint8_t redOn = (uint8_t)value[1];
+        uint8_t greenOn = (uint8_t)value[2];
+
+        _setLEDState(ledIndex, redOn != 0, greenOn != 0);
+    }
+};
+
+PN532_I2C pn532_i2c(Wire);
+PN532 nfc(pn532_i2c);
+
+BLEAdvertising* pAdvertising = nullptr;
+BLEServer* pServer = nullptr;
 
 // ============================================================
 // COLA DE UIDs
@@ -71,15 +162,7 @@ struct UIDEntry {
     bool active;
 };
 
-PN532_I2C pn532_i2c(Wire);
-PN532 nfc(pn532_i2c);
-
-BLEAdvertising* pAdvertising = nullptr;
 UIDEntry uidQueue[MAX_QUEUE];
-
-// ============================================================
-// GESTIÓN DE COLA
-// ============================================================
 
 static void _initQueue() {
     for (int i = 0; i < MAX_QUEUE; i++) {
@@ -98,9 +181,6 @@ static bool _uidEquals(const uint8_t* a, uint8_t aLen,
     return true;
 }
 
-// Añade un UID a la cola. Si ya existe refresca su TTL.
-// Si la cola está llena sustituye la entrada más antigua.
-// Devuelve true si el anuncio debe actualizarse.
 static bool _addToQueue(const uint8_t* uid, uint8_t uidLen) {
     for (int i = 0; i < MAX_QUEUE; i++) {
         if (uidQueue[i].active &&
@@ -114,7 +194,6 @@ static bool _addToQueue(const uint8_t* uid, uint8_t uidLen) {
         if (!uidQueue[i].active) { slot = i; break; }
     }
     if (slot == -1) {
-        // Cola llena: reemplaza la más antigua
         slot = 0;
         for (int i = 1; i < MAX_QUEUE; i++) {
             if (uidQueue[i].ts < uidQueue[slot].ts) slot = i;
@@ -127,7 +206,6 @@ static bool _addToQueue(const uint8_t* uid, uint8_t uidLen) {
     return true;
 }
 
-// Expira entradas caducadas. Devuelve true si algo cambió.
 static bool _expireQueue() {
     bool changed = false;
     for (int i = 0; i < MAX_QUEUE; i++) {
@@ -183,7 +261,15 @@ static void _buildAndStartAdvertising() {
 // ============================================================
 void setup() {
     Serial.begin(115200);
-    Serial.println("\n=== ESP32 NFC-BLE Broadcaster (cola) ===");
+    Serial.println("\n=== ESP32 NFC-BLE Broadcaster + LED Control (simple) ===");
+
+    // --- Init LEDs ---
+    for (int i = 0; i < 7; i++) {
+        pinMode(ledPins[i].red, OUTPUT);
+        pinMode(ledPins[i].green, OUTPUT);
+        _setLEDState(i, false, true);  // Verde (OK) inicial
+    }
+    Serial.println("[LED] 7 indicadores LED inicializados (verde)");
 
     // --- Init PN532 ---
     pinMode(NFC_RST_PIN, OUTPUT);
@@ -210,15 +296,31 @@ void setup() {
 
     // --- Init BLE ---
     BLEDevice::init("ESP32-NFC-Door");
+
+    // BLE Server para comandos de LED
+    pServer = BLEDevice::createServer();
+    BLEService* pService = pServer->createService(LED_SERVICE_UUID);
+    BLECharacteristic* pCharacteristic = pService->createCharacteristic(
+        LED_COMMAND_CHAR_UUID,
+        BLECharacteristic::PROPERTY_WRITE
+    );
+    pCharacteristic->setAccessPermissions(ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE);
+    pCharacteristic->setCallbacks(new LEDCommandCallback());
+    pService->start();
+
+    // BLE Advertising (para cola NFC)
     pAdvertising = BLEDevice::getAdvertising();
     pAdvertising->setScanResponse(false);
 
     _initQueue();
     _buildAndStartAdvertising();
 
-    Serial.print("[BLE] Anunciando. MAC: ");
+    // Iniciar advertising para el servidor
+    pServer->getAdvertising()->start();
+
+    Serial.print("[BLE] MAC: ");
     Serial.println(BLEDevice::getAddress().toString().c_str());
-    Serial.println("[SYS] Listo — esperando tarjetas NFC...\n");
+    Serial.println("[SYS] Listo — esperando tarjetas NFC y comandos BLE...\n");
 }
 
 // ============================================================
