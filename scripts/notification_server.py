@@ -226,6 +226,11 @@ def _send_led(led_id, red_on, green_on):
     if not BLEAK_AVAILABLE or not _ble_client:
         return False
 
+    # Validar que led_id esté en rango [1,7]
+    if led_id < 1 or led_id > 7:
+        logging.error(f"[BLE] Indicador {led_id} inválido (debe ser 1-7)")
+        return False
+
     # Intentar enviar directamente
     if _ble_client.send_led(led_id, red_on, green_on):
         # Éxito, limpiar comandos de la cola para este LED (deduplicación)
@@ -306,8 +311,8 @@ class LEDStateManager:
             led_updates = self._calculate_led_colors()
 
         # Enviar LEDs sin tener el lock (evita bloqueo de I/O dentro del lock)
-        for led_id, r, g, b in led_updates:
-            _send_led(led_id, r, g, b)
+        for led_id, red_on, green_on in led_updates:
+            _send_led(led_id, red_on, green_on)
 
     def remove_alert(self, sensor_id, alert_type):
         """Elimina alerta para un nodo/tipo"""
@@ -319,8 +324,8 @@ class LEDStateManager:
             led_updates = self._calculate_led_colors()
 
         # Enviar LEDs sin tener el lock (evita bloqueo de I/O dentro del lock)
-        for led_id, r, g, b in led_updates:
-            _send_led(led_id, r, g, b)
+        for led_id, red_on, green_on in led_updates:
+            _send_led(led_id, red_on, green_on)
 
     def _calculate_led_colors(self):
         """Calcula qué LEDs deben estar on/off según estado actual.
@@ -863,26 +868,31 @@ def api_add_uid():
         return jsonify({"error": "UID inválido. Debe ser hexadecimal (0-9, A-F)"}), 400
 
     try:
-        r = _session.get(
-            f"{ORION}/v2/entities/Sensor:s2/attrs/nfcAuthorizedUIDs/value",
-            headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
-            timeout=5)
+        # Retry loop para manejar race conditions
+        for attempt in range(3):
+            r = _session.get(
+                f"{ORION}/v2/entities/Sensor:s2/attrs/nfcAuthorizedUIDs/value",
+                headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
+                timeout=5)
 
-        if r.status_code == 200:
-            uids = set(u.strip() for u in r.text.strip().strip('"').split(',') if u.strip())
-        else:
-            uids = set(NFC_AUTHORIZED)
+            if r.status_code == 200:
+                uids = set(u.strip() for u in r.text.strip().strip('"').split(',') if u.strip())
+            else:
+                uids = set(NFC_AUTHORIZED)
 
-        if normalized_uid in uids:
-            logging.info(f"UID {normalized_uid} ya existe en la whitelist")
-            return jsonify({"status": "ok", "message": "UID ya autorizado", "uids": sorted(list(uids))}), 200
+            if normalized_uid in uids:
+                logging.info(f"UID {normalized_uid} ya existe en la whitelist")
+                return jsonify({"status": "ok", "message": "UID ya autorizado", "uids": sorted(list(uids))}), 200
 
-        uids.add(normalized_uid)
-        _patch("Sensor:s2", {"nfcAuthorizedUIDs": {"type": "Text", "value": ",".join(sorted(uids))}})
-        _push_whitelist_downlink()
+            uids.add(normalized_uid)
+            _patch("Sensor:s2", {"nfcAuthorizedUIDs": {"type": "Text", "value": ",".join(sorted(uids))}})
+            _push_whitelist_downlink()
 
-        logging.info(f"UID {normalized_uid} añadido a la whitelist")
-        return jsonify({"status": "ok", "message": "UID añadido", "uids": sorted(list(uids))}), 200
+            logging.info(f"UID {normalized_uid} añadido a la whitelist")
+            return jsonify({"status": "ok", "message": "UID añadido", "uids": sorted(list(uids))}), 200
+
+        # Si llegamos aquí, algo falló repetidamente (no debería pasar)
+        return jsonify({"error": "No se pudo actualizar la whitelist tras 3 intentos"}), 500
     except Exception as e:
         logging.error(f"api_add_uid error: {e}")
         return jsonify({"error": str(e)}), 500
@@ -894,26 +904,31 @@ def api_delete_uid(uid):
         return jsonify({"error": "UID inválido"}), 400
 
     try:
-        r = _session.get(
-            f"{ORION}/v2/entities/Sensor:s2/attrs/nfcAuthorizedUIDs/value",
-            headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
-            timeout=5)
+        # Retry loop para manejar race conditions
+        for attempt in range(3):
+            r = _session.get(
+                f"{ORION}/v2/entities/Sensor:s2/attrs/nfcAuthorizedUIDs/value",
+                headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
+                timeout=5)
 
-        if r.status_code == 200:
-            uids = set(u.strip() for u in r.text.strip().strip('"').split(',') if u.strip())
-        else:
-            uids = set(NFC_AUTHORIZED)
+            if r.status_code == 200:
+                uids = set(u.strip() for u in r.text.strip().strip('"').split(',') if u.strip())
+            else:
+                uids = set(NFC_AUTHORIZED)
 
-        if normalized_uid not in uids:
-            logging.warning(f"UID {normalized_uid} no encontrado en whitelist")
-            return jsonify({"status": "ok", "message": "UID no encontrado", "uids": sorted(list(uids))}), 200
+            if normalized_uid not in uids:
+                logging.warning(f"UID {normalized_uid} no encontrado en whitelist")
+                return jsonify({"status": "ok", "message": "UID no encontrado", "uids": sorted(list(uids))}), 200
 
-        uids.remove(normalized_uid)
-        _patch("Sensor:s2", {"nfcAuthorizedUIDs": {"type": "Text", "value": ",".join(sorted(uids))}})
-        _push_whitelist_downlink()
+            uids.remove(normalized_uid)
+            _patch("Sensor:s2", {"nfcAuthorizedUIDs": {"type": "Text", "value": ",".join(sorted(uids))}})
+            _push_whitelist_downlink()
 
-        logging.info(f"UID {normalized_uid} eliminado de la whitelist")
-        return jsonify({"status": "ok", "message": "UID eliminado", "uids": sorted(list(uids))}), 200
+            logging.info(f"UID {normalized_uid} eliminado de la whitelist")
+            return jsonify({"status": "ok", "message": "UID eliminado", "uids": sorted(list(uids))}), 200
+
+        # Si llegamos aquí, algo falló repetidamente (no debería pasar)
+        return jsonify({"error": "No se pudo actualizar la whitelist tras 3 intentos"}), 500
     except Exception as e:
         logging.error(f"api_delete_uid error: {e}")
         return jsonify({"error": str(e)}), 500

@@ -142,6 +142,14 @@ class LEDCommandCallback : public BLECharacteristicCallbacks {
         uint8_t redOn = (uint8_t)value[1];
         uint8_t greenOn = (uint8_t)value[2];
 
+        // Validar que ledIndex esté en rango [0,6]
+        if (ledIndex >= 7) {
+            Serial.print("[LED] ERROR: Indicador ");
+            Serial.print((uint8_t)value[0]);
+            Serial.println(" fuera de rango (debe ser 1-7)");
+            return;
+        }
+
         _setLEDState(ledIndex, redOn != 0, greenOn != 0);
     }
 };
@@ -182,6 +190,14 @@ static bool _uidEquals(const uint8_t* a, uint8_t aLen,
 }
 
 static bool _addToQueue(const uint8_t* uid, uint8_t uidLen) {
+    // Validar que uidLen no exceda el tamaño del buffer
+    if (uidLen > 7) {
+        Serial.print("[NFC] ERROR: UID demasiado largo (");
+        Serial.print(uidLen);
+        Serial.println(" bytes, máx 7)");
+        uidLen = 7;  // Truncar a tamaño máximo
+    }
+
     for (int i = 0; i < MAX_QUEUE; i++) {
         if (uidQueue[i].active &&
                 _uidEquals(uidQueue[i].uid, uidQueue[i].len, uid, uidLen)) {
@@ -208,9 +224,10 @@ static bool _addToQueue(const uint8_t* uid, uint8_t uidLen) {
 
 static bool _expireQueue() {
     bool changed = false;
+    unsigned long now = millis();
     for (int i = 0; i < MAX_QUEUE; i++) {
         if (uidQueue[i].active &&
-                (millis() - uidQueue[i].ts >= UID_TTL_MS)) {
+                ((unsigned long)(now - uidQueue[i].ts) >= UID_TTL_MS)) {
             uidQueue[i].active = false;
             changed = true;
         }
@@ -304,7 +321,7 @@ void setup() {
         LED_COMMAND_CHAR_UUID,
         BLECharacteristic::PROPERTY_WRITE
     );
-    pCharacteristic->setAccessPermissions(ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE);
+    pCharacteristic->setAccessPermissions(ESP_GATT_PERM_WRITE);
     pCharacteristic->setCallbacks(new LEDCommandCallback());
     pService->start();
 
