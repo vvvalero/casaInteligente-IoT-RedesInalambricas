@@ -116,6 +116,7 @@ docker run --rm \
     --email valen@vvalero.dev \
     --agree-tos \
     --no-eff-email \
+    --non-interactive \
     -d $DOMAIN
 
 ok "Certificado TLS obtenido para $DOMAIN"
