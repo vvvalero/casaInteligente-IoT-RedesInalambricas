@@ -135,7 +135,7 @@ static void _setLEDState(int ledIndex, bool red, bool green) {
 // ============================================================
 class LEDCommandCallback : public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic* pCharacteristic) {
-        std::string value = pCharacteristic->getValue();
+        String value = pCharacteristic->getValue();
         if (value.length() < 3) return;
 
         uint8_t ledIndex = (uint8_t)value[0] - 1;
@@ -248,7 +248,7 @@ static int _queueCount() {
 // ============================================================
 
 static void _buildAndStartAdvertising() {
-    std::string mfr;
+    String mfr;
     mfr += (char)COMPANY_ID_LOW;
     mfr += (char)COMPANY_ID_HIGH;
     mfr += 'N'; mfr += 'F'; mfr += 'C';
