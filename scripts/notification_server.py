@@ -920,11 +920,11 @@ def api_get_uids():
 @app.route("/api/nfc/uids", methods=["POST"])
 def api_add_uid():
     data = request.get_json(silent=True) or {}
-    nombre = data.get("nombre", "").strip()
-    uid = data.get("uid", "").strip()
+    nombre = str(data.get("nombre", "")).strip()
+    uid = str(data.get("uid", "")).strip()
 
-    if not nombre:
-        return jsonify({"error": "Nombre de tarjeta requerido"}), 400
+    if not nombre or nombre == "[object Object]":
+        return jsonify({"error": "Nombre de tarjeta requerido y válido"}), 400
 
     normalized_uid = _normalize_uid(uid)
     if not normalized_uid:
@@ -968,9 +968,9 @@ def api_add_uid():
 
 @app.route("/api/nfc/uids/<nombre>", methods=["DELETE"])
 def api_delete_uid(nombre):
-    nombre = nombre.strip()
-    if not nombre:
-        return jsonify({"error": "Nombre de tarjeta requerido"}), 400
+    nombre = str(nombre).strip() if nombre else ""
+    if not nombre or nombre == "[object Object]":
+        return jsonify({"error": "Nombre de tarjeta inválido"}), 400
 
     try:
         # Retry loop para manejar race conditions
