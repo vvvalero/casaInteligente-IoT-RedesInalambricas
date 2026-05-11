@@ -5,7 +5,6 @@ const MOCK_NODES = [
         id: 'Sensor:s1',
         temperature: 21.4,
         luminosity: 340,
-        barometricPressure: 1013.2,
         humidity: 58,
         accelerationMagnitude: 0.02,
     },
@@ -20,7 +19,6 @@ const MOCK_NODES = [
         id: 'Sensor:s3',
         temperature: 14.1,
         luminosity: 8500,
-        barometricPressure: 1012.8,
         bleDevicesNearby: 3,
     },
 ];
@@ -184,7 +182,6 @@ function renderNodeCard(n) {
     let extraHTML = '';
     if (id === 's1') {
         extraHTML = `
-            <div class="nc-sensor"><span class="sensor-label">Presión</span><span class="sensor-value">${n.barometricPressure || '--'} hPa</span></div>
             <div class="nc-sensor"><span class="sensor-label">Humedad</span><span class="sensor-value">${n.humidity || '--'} %</span></div>
             <div class="nc-sensor nc-sensor--wide"><span class="sensor-label">Vibración</span><span class="sensor-value">${n.accelerationMagnitude != null ? Number(n.accelerationMagnitude).toFixed(3) : '--'} g</span></div>
         `;
@@ -195,7 +192,6 @@ function renderNodeCard(n) {
         `;
     } else if (id === 's3') {
         extraHTML = `
-            <div class="nc-sensor"><span class="sensor-label">Presión</span><span class="sensor-value">${n.barometricPressure || '--'} hPa</span></div>
             <div class="nc-sensor"><span class="sensor-label">Disp. BLE</span><span class="sensor-value">${n.bleDevicesNearby || '0'}</span></div>
         `;
     }
@@ -254,7 +250,6 @@ function renderNodeDetails(sensorId) {
     let extraHTML = '';
     if (id === 's1') {
         extraHTML = `
-            <div class="sensor-item"><span class="sensor-label">Presión Atmosférica</span><span class="sensor-value">${n.barometricPressure || '--'} hPa</span></div>
             <div class="sensor-item"><span class="sensor-label">Humedad Relativa</span><span class="sensor-value">${n.humidity || '--'} %</span></div>
             <div class="sensor-item"><span class="sensor-label">Vibración (Seguridad)</span><span class="sensor-value">${n.accelerationMagnitude != null ? Number(n.accelerationMagnitude).toFixed(3) : '--'} g</span></div>
         `;
@@ -265,7 +260,6 @@ function renderNodeDetails(sensorId) {
         `;
     } else if (id === 's3') {
         extraHTML = `
-            <div class="sensor-item"><span class="sensor-label">Presión Atmosférica</span><span class="sensor-value">${n.barometricPressure || '--'} hPa</span></div>
             <div class="sensor-item"><span class="sensor-label">Dispositivos Cercanos</span><span class="sensor-value">${n.bleDevicesNearby || '0'}</span></div>
         `;
     }

@@ -3,18 +3,18 @@
 # Soporta 3 tipos de nodo configurados via credentials.py:
 #
 #   NODE_TYPE = 'salon'
-#     Sensores: temp, hum, lux, presión, acelerómetro
+#     Sensores: temp, hum, lux, acelerómetro
 #
 #   NODE_TYPE = 'dormitorio'
 #     Sensores: temp, hum, lux, NFC UID vía BLE (ESP32 + PN532)
 #
 #   NODE_TYPE = 'exterior'
-#     Sensores: temp, hum, presión, BLE scanner
+#     Sensores: temp, hum, lux, BLE scanner
 #
 # Payload Cayenne LPP por nodo:
-#   Salon:      CH1=temp CH2=hum CH3=lux CH4=pres CH5=accel CH6=room
+#   Salon:      CH1=temp CH2=hum CH3=lux CH4=accel CH5=room
 #   Dormitorio: CH1=temp CH2=hum CH3=lux CH4=nfc_uid CH5=room
-#   Exterior:   CH1=temp CH2=hum CH3=lux CH4=pres CH5=ble_count CH6=room
+#   Exterior:   CH1=temp CH2=hum CH3=lux CH4=ble_count CH5=room
 #
 # Downlink (desde Fiware via TTN) — controla el LED RGB integrado:
 #   Byte 0: comando
@@ -37,7 +37,6 @@ from CayenneLPP import CayenneLPP
 from pysense import Pysense
 from SI7006A20 import SI7006A20
 from LTR329ALS01 import LTR329ALS01
-from MPL3115A2 import MPL3115A2, PRESSURE
 from LIS2HH12 import LIS2HH12
 from led import (sistema_arrancando, sistema_join_espera, sistema_conectado,
                  sistema_transmitiendo, sistema_error, sistema_downlink_recibido,
@@ -122,11 +121,6 @@ _ble = None
 
 if NODE_TYPE == 'salon':
     try:
-        _mpl = MPL3115A2(py, mode=PRESSURE)
-        print('[Salon] MPL3115A2 OK')
-    except Exception as e:
-        print('[Salon] MPL3115A2 no disponible: {}'.format(e))
-    try:
         _acc = LIS2HH12(py)
         print('[Salon] LIS2HH12 OK')
     except Exception as e:
@@ -144,11 +138,6 @@ elif NODE_TYPE == 'dormitorio':
         print('[Dormitorio] ESP32_NFC_MAC no configurado — NFC desactivado')
 
 elif NODE_TYPE == 'exterior':
-    try:
-        _mpl = MPL3115A2(py, mode=PRESSURE)
-        print('[Exterior] MPL3115A2 OK')
-    except Exception as e:
-        print('[Exterior] MPL3115A2 no disponible: {}'.format(e))
     try:
         from ble_scanner import BLEScanner
         _ble = BLEScanner()
@@ -194,11 +183,10 @@ def _leer_comunes():
 
 def _leer_salon():
     temp, hum, lux = _leer_comunes()
-    pres = _mpl.pressure() / 100.0 if _mpl else 1013.0
     ax, ay, az = _acc.acceleration() if _acc else (0.0, 0.0, 0.0)
 
-    print('  T={:.1f}C H={:.1f}% Lux={} P={:.1f}hPa Acc=({:.2f},{:.2f},{:.2f})g'.format(
-        temp, hum, lux, pres, ax, ay, az))
+    print('  T={:.1f}C H={:.1f}% Lux={} Acc=({:.2f},{:.2f},{:.2f})g'.format(
+        temp, hum, lux, ax, ay, az))
 
     magnitud = (ax**2 + ay**2 + az**2) ** 0.5
     if magnitud > 1.5:
@@ -209,9 +197,8 @@ def _leer_salon():
     lpp.add_temperature(1, temp)
     lpp.add_relative_humidity(2, hum)
     lpp.add_luminosity(3, lux)
-    lpp.add_barometric_pressure(4, pres)
-    lpp.add_accelerometer(5, ax, ay, az)
-    lpp.add_digital_input(6, ROOM_ID['salon'])
+    lpp.add_accelerometer(4, ax, ay, az)
+    lpp.add_digital_input(5, ROOM_ID['salon'])
     return bytes(lpp.get_buffer())
 
 
@@ -261,15 +248,14 @@ def _leer_dormitorio():
 
 def _leer_exterior():
     temp, hum, lux = _leer_comunes()
-    pres = _mpl.pressure() / 100.0 if _mpl else 1013.0
 
     n_cercanos = 0
     if _ble:
         resultado = _ble.escanear()
         n_cercanos = resultado['cercanos']
 
-    print('  T={:.1f}C H={:.1f}% Lux={} P={:.1f}hPa BLE={}'.format(
-        temp, hum, lux, pres, n_cercanos))
+    print('  T={:.1f}C H={:.1f}% Lux={} BLE={}'.format(
+        temp, hum, lux, n_cercanos))
 
     if lux < 50:
         print('  Luminosidad baja exterior ({} lux)'.format(lux))
@@ -279,9 +265,8 @@ def _leer_exterior():
     lpp.add_temperature(1, temp)
     lpp.add_relative_humidity(2, hum)
     lpp.add_luminosity(3, lux)
-    lpp.add_barometric_pressure(4, pres)
-    lpp.add_digital_input(5, min(n_cercanos, 255))
-    lpp.add_digital_input(6, ROOM_ID['exterior'])
+    lpp.add_digital_input(4, min(n_cercanos, 255))
+    lpp.add_digital_input(5, ROOM_ID['exterior'])
     return bytes(lpp.get_buffer())
 
 

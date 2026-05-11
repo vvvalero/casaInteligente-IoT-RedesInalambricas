@@ -11,8 +11,8 @@
 │                                                                  │
 │  Nodo 1 — Salón          Nodo 2 — Dormitorio   Nodo 3 — Exterior │
 │  SI7006A20 (T+H)         SI7006A20 (T+H)       SI7006A20 (T+H)  │
-│  LTR329ALS01 (lux)       LTR329ALS01 (lux)     MPL3115A2 (pres) │
-│  MPL3115A2 (presión)     BLE scanner (NFC)     BLE scanner      │
+│  LTR329ALS01 (lux)       LTR329ALS01 (lux)     BLE scanner      │
+│  LIS2HH12 (aceleróm.)    BLE scanner (NFC)     BLE scanner      │
 │  LIS2HH12 (aceleróm.)    LED RGB integrado      LED RGB integrado │
 │                          ▲                                       │
 │                    BLE Advertising                               │
@@ -269,7 +269,6 @@ Deberías ver `temperature`, `humidity`, `luminosity` etc. con valores reales y 
 | 1 | Temperature | 0x67 | Temperatura °C |
 | 2 | Humidity | 0x68 | Humedad %RH |
 | 3 | Luminosity | 0x65 | Luminosidad lux |
-| 4 | Barometric Pressure | 0x73 | Presión hPa |
 | 5 | Accelerometer | 0x71 | Aceleración X/Y/Z en g |
 | 6 | Digital Input | 0x00 | ID habitación (1) |
 
@@ -289,7 +288,6 @@ Deberías ver `temperature`, `humidity`, `luminosity` etc. con valores reales y 
 |---|---|---|---|
 | 1 | Temperature | 0x67 | Temperatura °C |
 | 2 | Humidity | 0x68 | Humedad %RH |
-| 3 | Barometric Pressure | 0x73 | Presión hPa |
 | 4 | Digital Input | 0x00 | Dispositivos BLE cercanos |
 | 5 | Digital Input | 0x00 | ID habitación (3) |
 
@@ -355,7 +353,7 @@ smart-home/
 │       ├── CayenneLPP.py
 │       ├── SI7006A20.py                  # Temp + Humedad
 │       ├── LTR329ALS01.py                # Luminosidad
-│       ├── MPL3115A2.py                  # Presión + Altitud
+│       ├── MPL3115A2.py                  # Sensor no usado
 │       ├── LIS2HH12.py                   # Acelerómetro 3 ejes
 │       └── pysense.py / pycoproc.py      # Placa de expansión Pysense
 │
@@ -388,7 +386,7 @@ House:001
   ├── Room:dormitorio ← Sensor:s2 (NFC)
   └── Room:exterior   ← Sensor:s3 (BLE)
 
-Alert:temp_high | temp_low | humidity | vibration | nfc_denied | aforo | pressure_low
+Alert:temp_high | temp_low | humidity | vibration | nfc_denied | aforo
 AccessLog:N  ← una entidad nueva por cada lectura NFC (nfcUID, authorized, timestamp)
 ```
 
@@ -436,9 +434,6 @@ Verifica que en TTN Console el dispositivo está registrado como LoRaWAN Specifi
 docker network rm fiware_default
 ./services_dmz start
 ```
-
-**Presión baja dispara alerta incorrectamente:**
-La presión normal en Albacete es ~941 hPa por la altitud (~700m). El umbral ya está corregido a 950 hPa en `notification_server.py`.
 
 **Downlinks TTN dan HTTP 400:**
 La `TTN_API_KEY` no está configurada en `.env`. Generarla en TTN Console → Applications → API keys con permiso `Write downlink application traffic`.

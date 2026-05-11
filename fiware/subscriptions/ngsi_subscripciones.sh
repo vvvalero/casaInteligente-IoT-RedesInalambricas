@@ -21,7 +21,7 @@ _sub() {
 echo "Creando suscripciones..."
 
 _sub "[1] Temperatura" \
-  '{"description":"Cambio de temperatura en cualquier nodo","subject":{"entities":[{"idPattern":"Sensor:.*","type":"Sensor"}],"condition":{"attrs":["temperature"]}},"notification":{"http":{"url":"'"$NOTIF"'"},"attrs":["temperature","humidity","luminosity","barometricPressure","vibrationDetected","accelerationMagnitude","refRoom","nodeType"],"attrsFormat":"keyValues"},"throttling":60}'
+  '{"description":"Cambio de temperatura en cualquier nodo","subject":{"entities":[{"idPattern":"Sensor:.*","type":"Sensor"}],"condition":{"attrs":["temperature"]}},"notification":{"http":{"url":"'"$NOTIF"'"},"attrs":["temperature","humidity","luminosity","vibrationDetected","accelerationMagnitude","refRoom","nodeType"],"attrsFormat":"keyValues"},"throttling":60}'
 
 _sub "[2] Humedad" \
   '{"description":"Cambio de humedad en cualquier nodo","subject":{"entities":[{"idPattern":"Sensor:.*","type":"Sensor"}],"condition":{"attrs":["humidity"]}},"notification":{"http":{"url":"'"$NOTIF"'"},"attrs":["temperature","humidity","luminosity","refRoom","nodeType"],"attrsFormat":"keyValues"},"throttling":60}'
@@ -38,10 +38,7 @@ _sub "[5] BLE exterior" \
 _sub "[6] Luminosidad exterior" \
   '{"description":"Cambio de luminosidad en exterior","subject":{"entities":[{"id":"Sensor:s3","type":"Sensor"}],"condition":{"attrs":["luminosity"]}},"notification":{"http":{"url":"'"$NOTIF"'"},"attrs":["luminosity","refRoom"],"attrsFormat":"keyValues"},"throttling":300}'
 
-_sub "[7] Presion exterior" \
-  '{"description":"Cambio de presion atmosferica en exterior","subject":{"entities":[{"id":"Sensor:s3","type":"Sensor"}],"condition":{"attrs":["barometricPressure"]}},"notification":{"http":{"url":"'"$NOTIF"'"},"attrs":["barometricPressure","temperature","refRoom"],"attrsFormat":"keyValues"},"throttling":300}'
-
-_sub "[8] Acceso NFC" \
+_sub "[7] Acceso NFC" \
   '{"description":"Acceso NFC registrado (autorizado o denegado)","subject":{"entities":[{"idPattern":"AccessLog:.*","type":"AccessLog"}],"condition":{"attrs":["authorized"]}},"notification":{"http":{"url":"'"$NOTIF"'"},"attrs":["nfcUID","authorized","timestamp"],"attrsFormat":"keyValues"},"throttling":5}'
 
 echo ""

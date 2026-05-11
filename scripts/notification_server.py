@@ -307,7 +307,6 @@ class LEDStateManager:
         }
         self.type_alerts = {
             "temp": set(),
-            "pressure": set(),
             "humidity": set()
         }
         self._lock = threading.Lock()
@@ -353,7 +352,6 @@ class LEDStateManager:
         # Indicadores 4-6: Alertas por tipo
         alert_leds = {
             "temp": 4,
-            "pressure": 5,
             "humidity": 6
         }
         for alert_type, led_id in alert_leds.items():
@@ -365,6 +363,9 @@ class LEDStateManager:
                     updates.append((led_id, True, False))  # Rojo (alerta)
             else:
                 updates.append((led_id, False, True))  # Verde (OK)
+
+        # Indicador 5 queda reservado sin uso funcional.
+        updates.append((5, False, False))
 
         # Indicador 7: Sistema general
         all_alerts = set()
@@ -880,24 +881,9 @@ def r_lux_exterior(d, sid):
         _downlink(sid, [0x07, 0x00])
 
 
-def r_presion(d, sid):
-    p = d.get("barometricPressure")
-    if p is None:
-        return
-    if p < 950:
-        logging.warning(f"Presion baja: {p} hPa en {sid}")
-        _alerta("pressure_low", True, f"Presion baja: {p} hPa", "warning", sid)
-        _downlink(sid, [0x02, 255, 0, 0])
-        _led_manager.add_alert(sid, "pressure")
-    else:
-        _alerta("pressure_low", False, "", "info", sid)
-        _downlink(sid, [0x02, 0, 255, 0])
-        _led_manager.remove_alert(sid, "pressure")
-
-
 TODAS_REGLAS = [
     r_temp_alta, r_temp_baja, r_humedad, r_vibracion,
-    r_nfc, r_aforo, r_lux_exterior, r_presion
+    r_nfc, r_aforo, r_lux_exterior
 ]
 
 # Reglas que crean entidades únicas por evento (AccessLog, etc.) y solo deben

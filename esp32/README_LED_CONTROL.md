@@ -4,7 +4,7 @@
 
 El ESP32 controla **8 indicadores de estado**, cada uno compuesto por **2 LEDs simples** (rojo y verde):
 - **Indicadores 1-3**: Estado de cada nodo (verde=OK, rojo=alerta)
-- **Indicadores 4-6**: Alertas por tipo agregadas (temperatura, presión, humedad)
+- **Indicadores 4-6**: Alertas por tipo agregadas (temperatura, humedad y reservado)
 - **Indicador 7**: Estado general del sistema
 - **Indicador 8**: Acceso NFC (verde=autorizado, rojo=denegado, apagado=sin actividad)
 
@@ -18,7 +18,7 @@ Los LEDs se actualizan automáticamente con lógica inteligente de agregación.
 | **2** | 12 | 🔴 Rojo | 13 | 🟢 Verde | **Nodo s2 (Dormitorio)** |
 | **3** | 15 | 🔴 Rojo | 2 | 🟢 Verde | **Nodo s3 (Exterior)** |
 | **4** | 5 | 🟠 Naranja | 18 | 🔵 Azul | **Temperatura (agregado)** |
-| **5** | 19 | 🟠 Naranja | 23 | 🔵 Azul | **Presión (agregado)** |
+| **5** | 19 | 🟠 Naranja | 23 | 🔵 Azul | **Reservado** |
 | **6** | 4 | 🟠 Naranja | 16 | 🔵 Azul | **Humedad (agregado)** |
 | **7** | 17 | 🔴 Rojo | 27 | 🟢 Verde | **Sistema general** |
 | **8** | 33 | 🔴 Rojo | 14 | 🟢 Verde | **Acceso NFC** |
@@ -49,7 +49,7 @@ Indicador 3: Nodo s3 (Exterior)
 ```
 Si s1 tiene temperatura alta:    Indicador 1 = Rojo
 Si s2 está normal:               Indicador 2 = Verde
-Si s3 tiene presión baja:        Indicador 3 = Rojo
+Si s3 tiene otra alerta:         Indicador 3 = Rojo
 ```
 
 ### Indicadores 4-6 — Alertas por Tipo (Agregadas de todos los nodos)
@@ -58,7 +58,7 @@ Cada indicador muestra si hay ese tipo de alerta en algún nodo:
 
 ```
 Indicador 4: Temperatura (temp alta o baja en cualquier nodo)
-Indicador 5: Presión (presión baja en cualquier nodo)
+Indicador 5: Reservado (sin uso)
 Indicador 6: Humedad (humedad alta en cualquier nodo)
 ```
 
@@ -72,11 +72,11 @@ Indicador 6: Humedad (humedad alta en cualquier nodo)
 Si s1 tiene temp alta y s2 tiene temp baja:
   Indicador 4 = Amarillo (crítico: 2 nodos con alerta de temperatura)
 
-Si solo s3 tiene presión baja:
-  Indicador 5 = Rojo (1 nodo con alerta)
+Si el indicador 5 está reservado:
+    Indicador 5 = Apagado
 
 Si todos OK:
-  Indicador 5 = Verde
+    Indicador 5 = Verde
 ```
 
 ### Indicador 7 — Sistema General
@@ -130,7 +130,7 @@ Indicador 1 (s1) rojo:              [0x01, 0x01, 0x00]
 Indicador 2 (s2) verde:             [0x02, 0x00, 0x01]
 Indicador 3 (s3) amarillo:          [0x03, 0x01, 0x01]
 Indicador 4 (Temp) rojo:            [0x04, 0x01, 0x00]
-Indicador 5 (Presión) verde:        [0x05, 0x00, 0x01]
+Indicador 5 (Reservado) apagado:    [0x05, 0x00, 0x00]
 Indicador 6 (Humedad) amarillo:     [0x06, 0x01, 0x01]
 Indicador 7 (Sistema) apagado:      [0x07, 0x00, 0x00]
 Indicador 8 (NFC) acceso autorizado:[0x08, 0x00, 0x01]
@@ -165,7 +165,7 @@ Indicador 1 (s1):         GPIO 25 (ROJO),    GPIO 26 (VERDE)
 Indicador 2 (s2):         GPIO 12 (ROJO),    GPIO 13 (VERDE)
 Indicador 3 (s3):         GPIO 15 (ROJO),    GPIO 2  (VERDE)
 Indicador 4 (Temp):       GPIO 5  (NARANJA), GPIO 18 (AZUL)
-Indicador 5 (Presión):    GPIO 19 (NARANJA), GPIO 23 (AZUL)
+Indicador 5 (Reservado):  GPIO 19 (NARANJA), GPIO 23 (AZUL)
 Indicador 6 (Humedad):    GPIO 4  (NARANJA), GPIO 16 (AZUL)
 Indicador 7 (Sistema):    GPIO 17 (ROJO),    GPIO 27 (VERDE)
 Indicador 8 (Acceso NFC): GPIO 33 (ROJO),    GPIO 14 (VERDE)
@@ -314,7 +314,7 @@ Indicador 3 (s3):  🔴 ROJO     (hay alerta de temperatura baja)
 **Indicadores de Alertas Tipo:**
 ```
 Indicador 4 (Temp):    🟡 AMARILLO  (2+ nodos con alerta de temperatura)
-Indicador 5 (Presión): 🟢 VERDE     (OK en todos)
+Indicador 5 (Reservado): ⚫ APAGADO  (sin uso)
 Indicador 6 (Humedad): 🟢 VERDE     (OK en todos)
 ```
 

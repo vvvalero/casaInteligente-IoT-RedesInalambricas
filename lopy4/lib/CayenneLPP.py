@@ -14,7 +14,6 @@ LPP_PRESENCE = 102            # 1 byte, 1
 LPP_TEMPERATURE = 103         # 2 bytes, 0.1°C signed
 LPP_RELATIVE_HUMIDITY = 104   # 1 byte, 0.5% unsigned
 LPP_ACCELEROMETER = 113       # 2 bytes per axis, 0.001G
-LPP_BAROMETRIC_PRESSURE = 115 # 2 bytes 0.1 hPa Unsigned
 LPP_GYROMETER = 134           # 2 bytes per axis, 0.01 °/s
 LPP_GPS = 136                 # 3 byte lon/lat 0.0001 °, 3 bytes alt 0.01 meter
 
@@ -28,7 +27,6 @@ LPP_PRESENCE_SIZE = 3            # 1 byte, 1
 LPP_TEMPERATURE_SIZE = 4         # 2 bytes, 0.1°C signed
 LPP_RELATIVE_HUMIDITY_SIZE = 3   # 1 byte, 0.5% unsigned
 LPP_ACCELEROMETER_SIZE = 8       # 2 bytes per axis, 0.001G
-LPP_BAROMETRIC_PRESSURE_SIZE = 4 # 2 bytes 0.1 hPa Unsigned
 LPP_GYROMETER_SIZE = 8           # 2 bytes per axis, 0.01 °/s
 LPP_GPS_SIZE = 11                # 3 byte lon/lat 0.0001 °, 3 bytes alt 0.01 meter
 
@@ -110,14 +108,6 @@ class CayenneLPP:
         self.buffer.extend(struct.pack('b', vy))        
         self.buffer.extend(struct.pack('b', vz >> 8))
         self.buffer.extend(struct.pack('b', vz))        
-
-    def add_barometric_pressure(self, channel, value):
-        val = math.floor(value * 10)
-
-        self.buffer.extend(struct.pack('b', channel))
-        self.buffer.extend(struct.pack('b', LPP_BAROMETRIC_PRESSURE))
-        self.buffer.extend(struct.pack('b', val >> 8))
-        self.buffer.extend(struct.pack('b', val))                
 
     def add_gryrometer(self, channel, x, y, z):
         vx = math.floor(x * 100)

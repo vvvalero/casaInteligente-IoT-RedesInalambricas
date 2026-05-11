@@ -39,7 +39,7 @@ for data in \
 done
 
 # ---- SENSORES ----
-# Sensor:s1 — Salón (temp, hum, lux, presión, acelerómetro)
+# Sensor:s1 — Salón (temp, hum, lux, acelerómetro)
 _post "Sensor:s1" '{
   "id":"Sensor:s1","type":"Sensor",
   "name":{"type":"Text","value":"Nodo Salon"},
@@ -48,7 +48,6 @@ _post "Sensor:s1" '{
   "temperature":{"type":"Number","value":0},
   "humidity":{"type":"Number","value":0},
   "luminosity":{"type":"Number","value":0},
-  "barometricPressure":{"type":"Number","value":0},
   "accelerationMagnitude":{"type":"Number","value":0},
   "vibrationDetected":{"type":"Boolean","value":false},
   "digitalInput":{"type":"Boolean","value":false},
@@ -74,7 +73,7 @@ _post "Sensor:s2" '{
   "timestamp":{"type":"DateTime","value":"1970-01-01T00:00:00Z"}
 }'
 
-# Sensor:s3 — Exterior (temp, hum, presión, BLE)
+# Sensor:s3 — Exterior (temp, hum, BLE)
 _post "Sensor:s3" '{
   "id":"Sensor:s3","type":"Sensor",
   "name":{"type":"Text","value":"Nodo Exterior"},
@@ -82,7 +81,6 @@ _post "Sensor:s3" '{
   "nodeType":{"type":"Text","value":"exterior"},
   "temperature":{"type":"Number","value":0},
   "humidity":{"type":"Number","value":0},
-  "barometricPressure":{"type":"Number","value":0},
   "luminosity":{"type":"Number","value":0},
   "bleDevicesNearby":{"type":"Number","value":0},
   "aforoMaximo":{"type":"Integer","value":5},
@@ -92,7 +90,7 @@ _post "Sensor:s3" '{
 }'
 
 # ---- ALERTAS INICIALES (vacías, se actualizarán dinámicamente) ----
-for tipo in temp_high temp_low humidity vibration aforo nfc_denied pressure_low; do
+for tipo in temp_high temp_low humidity vibration aforo nfc_denied; do
   _post "Alert:$tipo" "{
     \"id\":\"Alert:$tipo\",\"type\":\"Alert\",
     \"alertType\":{\"type\":\"Text\",\"value\":\"$tipo\"},

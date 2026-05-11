@@ -3,9 +3,9 @@
 # Casa Inteligente IoT · 3x LoPy4 + Pysense
 #
 # Registra únicamente los 3 nodos reales del proyecto:
-#   s1 → Nodo salón      (temp, hum, lux, presión, acelerómetro)
+#   s1 → Nodo salón      (temp, hum, lux, acelerómetro)
 #   s2 → Nodo dormitorio (temp, hum, lux, NFC)
-#   s3 → Nodo exterior   (temp, hum, presión, BLE)
+#   s3 → Nodo exterior   (temp, hum, BLE)
 #
 # Prerequisito: ngsi_crear_entidades.sh ya ejecutado
 
@@ -40,7 +40,6 @@ curl -s -o /dev/null -w "Servicio Sensor → HTTP %{http_code}\n" -X POST "$IOT_
         { \"object_id\": \"temperature\",           \"name\": \"temperature\",           \"type\": \"Number\" },
         { \"object_id\": \"humidity\",              \"name\": \"humidity\",              \"type\": \"Number\" },
         { \"object_id\": \"luminosity\",            \"name\": \"luminosity\",            \"type\": \"Number\" },
-        { \"object_id\": \"barometricPressure\",    \"name\": \"barometricPressure\",    \"type\": \"Number\" },
         { \"object_id\": \"vibrationDetected\",     \"name\": \"vibrationDetected\",     \"type\": \"Boolean\" },
         { \"object_id\": \"accelerationMagnitude\", \"name\": \"accelerationMagnitude\", \"type\": \"Number\" },
         { \"object_id\": \"nfcDetected\",           \"name\": \"nfcDetected\",           \"type\": \"Boolean\" },

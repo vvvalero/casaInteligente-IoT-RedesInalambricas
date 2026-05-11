@@ -44,7 +44,7 @@
 //   Indicador 2 (Nodo s2):     R=GPIO 12, G=GPIO 13
 //   Indicador 3 (Nodo s3):     R=GPIO 15, G=GPIO 2
 //   Indicador 4 (Temperatura): R=GPIO 5,  G=GPIO 18
-//   Indicador 5 (Presión):     R=GPIO 19, G=GPIO 23
+//   Indicador 5 (Reservado):   R=GPIO 19, G=GPIO 23
 //   Indicador 6 (Humedad):     R=GPIO 4,  G=GPIO 16
 //   Indicador 7 (Sistema):     R=GPIO 17, G=GPIO 27
 //   Indicador 8 (Acceso NFC):  R=GPIO 33, G=GPIO 14
@@ -87,7 +87,7 @@ const LEDPins ledPins[8] = {
     {12, 13},   // Indicador 2: Nodo s2 (Dormitorio)  R/V
     {15, 2},    // Indicador 3: Nodo s3 (Exterior)    R/V
     {5, 18},    // Indicador 4: Temperatura            N/A
-    {19, 23},   // Indicador 5: Presión                N/A
+    {19, 23},   // Indicador 5: Reservado              N/A
     {4, 16},    // Indicador 6: Humedad                N/A
     {17, 27},   // Indicador 7: Sistema general        R/V
     {33, 14}    // Indicador 8: Acceso NFC             R/V

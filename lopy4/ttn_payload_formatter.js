@@ -6,8 +6,7 @@ var LPP_TYPES = {
   0x65: { size:2, name:'luminosity',        decode:function(b,i){ return uint16(b,i); } },
   0x67: { size:2, name:'temperature',       decode:function(b,i){ return int16(b,i)/10.0; } },
   0x68: { size:1, name:'humidity',          decode:function(b,i){ return b[i]/2.0; } },
-  0x71: { size:6, name:'accelerometer',     decode:function(b,i){ return {x:int16(b,i)/1000.0, y:int16(b,i+2)/1000.0, z:int16(b,i+4)/1000.0}; } },
-  0x73: { size:2, name:'barometricPressure',decode:function(b,i){ return uint16(b,i)/10.0; } }
+  0x71: { size:6, name:'accelerometer',     decode:function(b,i){ return {x:int16(b,i)/1000.0, y:int16(b,i+2)/1000.0, z:int16(b,i+4)/1000.0}; } }
 };
 
 var ROOMS = { 1:'salon', 2:'dormitorio', 3:'exterior' };
