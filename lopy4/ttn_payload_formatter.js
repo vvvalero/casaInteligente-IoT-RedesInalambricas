@@ -35,7 +35,7 @@ function decodeUplink(input) {
   // NFC (nodo dormitorio)
   if(result.analogInput_4!==undefined){
     result.nfcDetected = result.analogInput_4 !== 0;
-    result.nfcUidPartial = Math.round(result.analogInput_4*100);
+    result.nfcUidPartial = result.analogInput_4;
   }
 
   // BLE aforo (nodo exterior)

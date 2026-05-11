@@ -616,7 +616,7 @@ def r_nfc(d, sid):
         return
 
     uid_partial = int(round(d.get("nfcUidPartial", 0) * 100))
-    uid = f"{uid_partial:04X}"
+    uid = f"{uid_partial & 0xFFFF:04X}"
 
     try:
         r = _session.get(
