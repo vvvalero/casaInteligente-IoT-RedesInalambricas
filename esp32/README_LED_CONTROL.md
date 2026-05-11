@@ -12,16 +12,20 @@ Los LEDs se actualizan automáticamente con lógica inteligente de agregación.
 
 ### Mapeo de Indicadores (8 totales, 16 LEDs)
 
-| Indicador | GPIO R | GPIO G | Propósito |
-|-----------|--------|--------|-----------|
-| **1** | 25 | 26 | **Nodo s1 (Salón)** |
-| **2** | 12 | 13 | **Nodo s2 (Dormitorio)** |
-| **3** | 15 | 2 | **Nodo s3 (Exterior)** |
-| **4** | 5 | 18 | **Temperatura (agregado)** |
-| **5** | 19 | 23 | **Presión (agregado)** |
-| **6** | 4 | 16 | **Humedad (agregado)** |
-| **7** | 17 | 27 | **Sistema general** |
-| **8** | 33 | 14 | **Acceso NFC** |
+| Indicador | GPIO alerta | Color alerta | GPIO normal | Color normal | Propósito |
+|-----------|-------------|--------------|-------------|--------------|-----------|
+| **1** | 25 | 🔴 Rojo | 26 | 🟢 Verde | **Nodo s1 (Salón)** |
+| **2** | 12 | 🔴 Rojo | 13 | 🟢 Verde | **Nodo s2 (Dormitorio)** |
+| **3** | 15 | 🔴 Rojo | 2 | 🟢 Verde | **Nodo s3 (Exterior)** |
+| **4** | 5 | 🟠 Naranja | 18 | 🔵 Azul | **Temperatura (agregado)** |
+| **5** | 19 | 🟠 Naranja | 23 | 🔵 Azul | **Presión (agregado)** |
+| **6** | 4 | 🟠 Naranja | 16 | 🔵 Azul | **Humedad (agregado)** |
+| **7** | 17 | 🔴 Rojo | 27 | 🟢 Verde | **Sistema general** |
+| **8** | 33 | 🔴 Rojo | 14 | 🟢 Verde | **Acceso NFC** |
+
+**Lógica de colores:**
+- Indicadores 1-3 y 7-8 (nodos, sistema, NFC): **Rojo** = alerta / **Verde** = OK / Ambos = crítico
+- Indicadores 4-6 (sensores): **Naranja** = alerta / **Azul** = normal / Ambos = crítico (2+ nodos afectados)
 
 ---
 
@@ -157,14 +161,14 @@ Cada indicador necesita:
 
 **Pines usados (16 total, 2 por indicador):**
 ```
-Indicador 1 (s1):         GPIO 25 (R), 26 (G)
-Indicador 2 (s2):         GPIO 12 (R), 13 (G)
-Indicador 3 (s3):         GPIO 15 (R), 2 (G)
-Indicador 4 (Temp):       GPIO 5 (R),  18 (G)
-Indicador 5 (Presión):    GPIO 19 (R), 23 (G)
-Indicador 6 (Humedad):    GPIO 4 (R),  16 (G)
-Indicador 7 (Sistema):    GPIO 17 (R), 27 (G)
-Indicador 8 (Acceso NFC): GPIO 33 (R), 14 (G)
+Indicador 1 (s1):         GPIO 25 (ROJO),    GPIO 26 (VERDE)
+Indicador 2 (s2):         GPIO 12 (ROJO),    GPIO 13 (VERDE)
+Indicador 3 (s3):         GPIO 15 (ROJO),    GPIO 2  (VERDE)
+Indicador 4 (Temp):       GPIO 5  (NARANJA), GPIO 18 (AZUL)
+Indicador 5 (Presión):    GPIO 19 (NARANJA), GPIO 23 (AZUL)
+Indicador 6 (Humedad):    GPIO 4  (NARANJA), GPIO 16 (AZUL)
+Indicador 7 (Sistema):    GPIO 17 (ROJO),    GPIO 27 (VERDE)
+Indicador 8 (Acceso NFC): GPIO 33 (ROJO),    GPIO 14 (VERDE)
 ```
 
 **Reservados (no disponibles):**

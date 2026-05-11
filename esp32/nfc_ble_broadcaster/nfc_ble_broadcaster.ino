@@ -75,59 +75,72 @@
 // Tiempo que un UID permanece en la cola
 #define UID_TTL_MS 35000
 
-// --- Pines de LEDs simples (rojo y verde por indicador) ---
+// --- Pines de LEDs (pin_a=alerta, pin_b=normal) ---
+// Indicadores 1-3 y 7-8: pin_a=ROJO,   pin_b=VERDE
+// Indicadores 4-6:        pin_a=NARANJA, pin_b=AZUL
 struct LEDPins {
-    uint8_t red, green;
+    uint8_t pin_a, pin_b;
 };
 
 const LEDPins ledPins[8] = {
-    {25, 26},   // Indicador 1: Nodo s1 (Salón)
-    {12, 13},   // Indicador 2: Nodo s2 (Dormitorio)
-    {15, 2},    // Indicador 3: Nodo s3 (Exterior)
-    {5, 18},    // Indicador 4: Temperatura (agregado)
-    {19, 23},   // Indicador 5: Presión (agregado)
-    {4, 16},    // Indicador 6: Humedad (agregado)
-    {17, 27},   // Indicador 7: Sistema general
-    {33, 14}    // Indicador 8: Acceso NFC (rojo=denegado, verde=autorizado)
+    {25, 26},   // Indicador 1: Nodo s1 (Salón)       R/V
+    {12, 13},   // Indicador 2: Nodo s2 (Dormitorio)  R/V
+    {15, 2},    // Indicador 3: Nodo s3 (Exterior)    R/V
+    {5, 18},    // Indicador 4: Temperatura            N/A
+    {19, 23},   // Indicador 5: Presión                N/A
+    {4, 16},    // Indicador 6: Humedad                N/A
+    {17, 27},   // Indicador 7: Sistema general        R/V
+    {33, 14}    // Indicador 8: Acceso NFC             R/V
+};
+
+// Nombres de color por indicador [pin_a, pin_b]
+static const char* COLOR_A[8] = {
+    "ROJO", "ROJO", "ROJO", "NARANJA", "NARANJA", "NARANJA", "ROJO", "ROJO"
+};
+static const char* COLOR_B[8] = {
+    "VERDE", "VERDE", "VERDE", "AZUL", "AZUL", "AZUL", "VERDE", "VERDE"
 };
 
 // ============================================================
 // CONTROL DE LEDs
 // ============================================================
 struct LEDState {
-    bool red;
-    bool green;
+    bool a;  // pin_a: alerta (rojo / naranja según indicador)
+    bool b;  // pin_b: normal (verde / azul según indicador)
 };
 
 LEDState ledStates[8] = {
-    {false, true},   // Indicador 1: Verde (OK)
-    {false, true},   // Indicador 2: Verde (OK)
-    {false, true},   // Indicador 3: Verde (OK)
-    {false, true},   // Indicador 4: Verde (OK)
-    {false, true},   // Indicador 5: Verde (OK)
-    {false, true},   // Indicador 6: Verde (OK)
-    {false, true},   // Indicador 7: Verde (OK)
-    {false, false}   // Indicador 8: Apagado (sin actividad NFC)
+    {false, true},   // Indicador 1: normal (verde)
+    {false, true},   // Indicador 2: normal (verde)
+    {false, true},   // Indicador 3: normal (verde)
+    {false, true},   // Indicador 4: normal (azul)
+    {false, true},   // Indicador 5: normal (azul)
+    {false, true},   // Indicador 6: normal (azul)
+    {false, true},   // Indicador 7: normal (verde)
+    {false, false}   // Indicador 8: apagado (sin actividad NFC)
 };
 
-static void _setLEDState(int ledIndex, bool red, bool green) {
+static void _setLEDState(int ledIndex, bool a, bool b) {
     if (ledIndex < 0 || ledIndex >= 8) return;
 
-    ledStates[ledIndex].red = red;
-    ledStates[ledIndex].green = green;
+    ledStates[ledIndex].a = a;
+    ledStates[ledIndex].b = b;
 
-    digitalWrite(ledPins[ledIndex].red, red ? HIGH : LOW);
-    digitalWrite(ledPins[ledIndex].green, green ? HIGH : LOW);
+    digitalWrite(ledPins[ledIndex].pin_a, a ? HIGH : LOW);
+    digitalWrite(ledPins[ledIndex].pin_b, b ? HIGH : LOW);
 
     Serial.print("[LED] Indicador ");
     Serial.print(ledIndex + 1);
     Serial.print(" → ");
-    if (red && green) {
-        Serial.println("AMARILLO (crítico)");
-    } else if (red) {
-        Serial.println("ROJO (alerta)");
-    } else if (green) {
-        Serial.println("VERDE (OK)");
+    if (a && b) {
+        Serial.print(COLOR_A[ledIndex]); Serial.print("+"); Serial.print(COLOR_B[ledIndex]);
+        Serial.println(" (crítico)");
+    } else if (a) {
+        Serial.print(COLOR_A[ledIndex]);
+        Serial.println(" (alerta)");
+    } else if (b) {
+        Serial.print(COLOR_B[ledIndex]);
+        Serial.println(" (OK)");
     } else {
         Serial.println("APAGADO");
     }
@@ -285,10 +298,10 @@ void setup() {
 
     // --- Init LEDs ---
     for (int i = 0; i < 8; i++) {
-        pinMode(ledPins[i].red, OUTPUT);
-        pinMode(ledPins[i].green, OUTPUT);
-        bool initGreen = (i < 7);  // Indicador 8 (NFC) arranca apagado
-        _setLEDState(i, false, initGreen);
+        pinMode(ledPins[i].pin_a, OUTPUT);
+        pinMode(ledPins[i].pin_b, OUTPUT);
+        bool initNormal = (i < 7);  // Indicador 8 (NFC) arranca apagado
+        _setLEDState(i, false, initNormal);
     }
     Serial.println("[LED] 8 indicadores LED inicializados");
 
