@@ -34,7 +34,7 @@ function decodeUplink(input) {
 
   // NFC (nodo dormitorio)
   if(result.analogInput_4!==undefined){
-    result.nfcDetected = result.analogInput_4 > 0;
+    result.nfcDetected = result.analogInput_4 !== 0;
     result.nfcUidPartial = Math.round(result.analogInput_4*100);
   }
 

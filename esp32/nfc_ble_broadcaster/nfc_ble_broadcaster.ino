@@ -45,8 +45,8 @@
 //   Indicador 3 (Nodo s3):     R=GPIO 15, G=GPIO 2
 //   Indicador 4 (Temperatura): R=GPIO 5,  G=GPIO 18
 //   Indicador 5 (Presión):     R=GPIO 19, G=GPIO 23
-//   Indicador 6 (Humedad):     R=GPIO 24, G=GPIO 9
-//   Indicador 7 (Sistema):     R=GPIO 10, G=GPIO 11
+//   Indicador 6 (Humedad):     R=GPIO 4,  G=GPIO 16
+//   Indicador 7 (Sistema):     R=GPIO 17, G=GPIO 27
 // ============================================================
 
 #include <Wire.h>
@@ -85,8 +85,8 @@ const LEDPins ledPins[7] = {
     {15, 2},    // Indicador 3: Nodo s3 (Exterior)
     {5, 18},    // Indicador 4: Temperatura (agregado)
     {19, 23},   // Indicador 5: Presión (agregado)
-    {24, 9},    // Indicador 6: Humedad (agregado)
-    {10, 11}    // Indicador 7: Sistema general
+    {4, 16},    // Indicador 6: Humedad (agregado)
+    {17, 27}    // Indicador 7: Sistema general
 };
 
 // ============================================================
