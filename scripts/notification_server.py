@@ -28,10 +28,21 @@ logging.basicConfig(level=logging.INFO,
 
 # Connection pooling: reutiliza conexiones TCP para mejorar concurrencia
 _session = requests.Session()
-retry_strategy = Retry(total=2, status_forcelist=[429, 500, 502, 503, 504], allowed_methods=["GET", "POST", "PATCH"])
+retry_strategy = Retry(
+    total=3,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["GET", "POST", "PATCH"],
+    backoff_factor=0.5  # Exponential backoff: 0.5s, 1s, 2s
+)
 adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=20, pool_maxsize=20)
 _session.mount("http://", adapter)
 _session.mount("https://", adapter)
+
+# Downlink queue: procesa downlinks secuencialmente para evitar rate limiting
+_downlink_queue = []
+_downlink_queue_lock = threading.Lock()
+_downlink_queue_event = threading.Event()
+_DOWNLINK_DELAY_MS = 300  # Delay entre downlinks consecutivos
 
 # ============================================================
 # BLE LED CLIENT (Control de ESP32)
@@ -457,13 +468,49 @@ def _update_attrs(eid, datos):
 
 
 def _alerta(tipo, active, msg, severity, sid=""):
-    _patch(f"Alert:{tipo}", {
+    eid = f"Alert:{tipo}"
+    attrs = {
         "active":    active,
         "message":   msg,
         "severity":  severity,
         "refSensor": sid,
         "timestamp": datetime.now(timezone.utc).isoformat()
-    })
+    }
+
+    # Intentar PATCH primero (entidad ya existe)
+    try:
+        r = _session.patch(
+            f"{ORION}/v2/entities/{eid}/attrs?options=keyValues",
+            json=attrs, headers=FS_HEADERS, timeout=5)
+        if r.status_code in (200, 204):
+            logging.info(f"PATCH {eid} → {r.status_code}")
+            return
+        elif r.status_code == 404:
+            logging.debug(f"Alert {eid} no existe, creando...")
+        else:
+            logging.error(f"PATCH {eid} → {r.status_code}: {r.text[:300]}")
+            return
+    except Exception as e:
+        logging.error(f"PATCH error {eid}: {e}")
+        return
+
+    # Si 404, crear la entidad
+    try:
+        entity = {
+            "id":        eid,
+            "type":      "Alert",
+            "active":    {"type": "Boolean",   "value": active},
+            "message":   {"type": "Text",      "value": msg},
+            "severity":  {"type": "Text",      "value": severity},
+            "refSensor": {"type": "Relationship", "value": sid},
+            "timestamp": {"type": "DateTime",  "value": attrs["timestamp"]}
+        }
+        r = _session.post(
+            f"{ORION}/v2/entities",
+            json=entity, headers=FS_HEADERS, timeout=5)
+        logging.info(f"POST {eid} → {r.status_code}")
+    except Exception as e:
+        logging.error(f"POST error {eid}: {e}")
 
 
 # ============================================================
@@ -471,6 +518,7 @@ def _alerta(tipo, active, msg, severity, sid=""):
 # ============================================================
 
 def _downlink(sensor_id, bytes_list):
+    """Agrega downlink a cola para procesamiento secuencial (evita rate limiting de TTN)"""
     device = SENSOR_TO_TTN.get(sensor_id)
     if not device:
         return
@@ -478,21 +526,47 @@ def _downlink(sensor_id, bytes_list):
         logging.warning(f"TTN_API_KEY no configurada — downlink omitido")
         return
 
-    url  = f"{TTN_API_BASE}/as/applications/{TTN_APP_ID}/devices/{device}/down/push"
-    hdrs = {
-        "Authorization": f"Bearer {TTN_API_KEY}",
-        "Content-Type":  "application/json"
-    }
-    body = {"downlinks": [{
-        "f_port":      1,
-        "frm_payload": base64.b64encode(bytes(bytes_list)).decode(),
-        "priority":    "NORMAL"
-    }]}
-    try:
-        r = _session.post(url, json=body, headers=hdrs, timeout=5)
-        logging.info(f"Downlink {device} {bytes_list} → {r.status_code}")
-    except Exception as e:
-        logging.error(f"Downlink error {device}: {e}")
+    with _downlink_queue_lock:
+        _downlink_queue.append((device, bytes_list))
+    _downlink_queue_event.set()
+
+
+def _downlink_worker():
+    """Worker que procesa downlinks de la cola secuencialmente"""
+    while True:
+        try:
+            _downlink_queue_event.wait(timeout=1)
+            _downlink_queue_event.clear()
+
+            while True:
+                with _downlink_queue_lock:
+                    if not _downlink_queue:
+                        break
+                    device, bytes_list = _downlink_queue.pop(0)
+
+                # Enviar downlink fuera del lock
+                url = f"{TTN_API_BASE}/as/applications/{TTN_APP_ID}/devices/{device}/down/push"
+                hdrs = {
+                    "Authorization": f"Bearer {TTN_API_KEY}",
+                    "Content-Type": "application/json"
+                }
+                body = {"downlinks": [{
+                    "f_port": 1,
+                    "frm_payload": base64.b64encode(bytes(bytes_list)).decode(),
+                    "priority": "NORMAL"
+                }]}
+                try:
+                    r = _session.post(url, json=body, headers=hdrs, timeout=5)
+                    logging.info(f"Downlink {device} {bytes_list} → {r.status_code}")
+                except Exception as e:
+                    logging.error(f"Downlink error {device}: {e}")
+
+                # Esperar entre downlinks para evitar rate limiting
+                time.sleep(_DOWNLINK_DELAY_MS / 1000.0)
+
+        except Exception as e:
+            logging.error(f"Downlink worker error: {e}")
+            time.sleep(1)
 
 
 def _text_to_uid(text):
@@ -1103,5 +1177,10 @@ if __name__ == "__main__":
         logging.warning("TTN_API_KEY no configurada — downlinks desactivados")
 
     _init_ble_client()
+
+    # Iniciar worker de downlinks (procesa secuencialmente con delay)
+    downlink_thread = threading.Thread(target=_downlink_worker, daemon=True)
+    downlink_thread.start()
+    logging.info(f"Downlink worker iniciado (delay={_DOWNLINK_DELAY_MS}ms entre comandos)")
 
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
