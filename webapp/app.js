@@ -350,14 +350,21 @@ async function fetchUIDs() {
     if (!document.getElementById('uid-list')) return;
     try {
         const res = await fetch(`${API_BASE}/nfc/uids`);
-        const uids = await res.json();
+        const tarjetas = await res.json();
         const container = document.getElementById('uid-list');
         container.innerHTML = '';
-        uids.forEach(uid => {
+        if (tarjetas.length === 0) {
+            container.innerHTML = '<div style="padding:1rem; color:var(--text-muted);">Sin tarjetas registradas</div>';
+            return;
+        }
+        tarjetas.forEach(t => {
             container.innerHTML += `
                 <div class="uid-item">
-                    <span style="font-family: monospace; font-weight: 500">${uid}</span>
-                    <button class="btn-primary btn-danger btn-sm" onclick="deleteUID('${uid}')">Eliminar</button>
+                    <div>
+                        <span style="font-weight: 500">${escapeHtml(t.nombre)}</span>
+                        <span style="color:var(--text-muted); font-size:0.85rem; font-family:monospace"> (${t.uid})</span>
+                    </div>
+                    <button class="btn-primary btn-danger btn-sm" onclick="deleteUID('${escapeHtml(t.nombre)}')">Eliminar</button>
                 </div>
             `;
         });
@@ -366,7 +373,11 @@ async function fetchUIDs() {
     }
 }
 
-async function addUID(uid) {
+async function addUID(nombre, uid) {
+    if (!nombre.trim()) {
+        alert("El nombre de la tarjeta es requerido");
+        return;
+    }
     const normalized = normalizeUID(uid);
     if (!normalized) {
         alert("UID inválido. Debe contener al menos un carácter hexadecimal (0-9, A-F)");
@@ -376,9 +387,14 @@ async function addUID(uid) {
         const res = await fetch(`${API_BASE}/nfc/uids`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({uid: normalized})
+            body: JSON.stringify({nombre: nombre.trim(), uid: normalized})
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!res.ok) {
+            alert("Error: " + (data.error || data.message || `HTTP ${res.status}`));
+            return;
+        }
+        document.getElementById('new-nombre').value = '';
         document.getElementById('new-uid').value = '';
         fetchUIDs();
     } catch(e) {
@@ -386,15 +402,38 @@ async function addUID(uid) {
     }
 }
 
-async function deleteUID(uid) {
-    if(!confirm(`¿Revocar acceso a la tarjeta con código ${uid}?`)) return;
+async function deleteUID(nombre) {
+    if(!confirm(`¿Eliminar acceso a la tarjeta "${nombre}"?`)) return;
     try {
-        const res = await fetch(`${API_BASE}/nfc/uids/${uid}`, { method: 'DELETE' });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const res = await fetch(`${API_BASE}/nfc/uids/${encodeURIComponent(nombre)}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) {
+            alert("Error: " + (data.error || data.message || `HTTP ${res.status}`));
+            return;
+        }
         fetchUIDs();
     } catch(e) {
         alert("Error al revocar la tarjeta: " + e.message);
     }
+}
+
+async function syncWhitelist() {
+    try {
+        const res = await fetch(`${API_BASE}/nfc/sync`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) {
+            alert("Error: " + (data.error || `HTTP ${res.status}`));
+            return;
+        }
+        alert("Sincronización iniciada. El dispositivo NFC recibirá la whitelist en el próximo ciclo.");
+    } catch(e) {
+        alert("Error al sincronizar: " + e.message);
+    }
+}
+
+function escapeHtml(text) {
+    const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'};
+    return text.replace(/[&<>"']/g, m => map[m]);
 }
 
 async function fetchAccessLog() {

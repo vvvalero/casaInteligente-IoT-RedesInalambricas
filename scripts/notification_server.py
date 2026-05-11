@@ -399,10 +399,10 @@ SENSOR_TO_TTN = {
     "Sensor:s3": os.environ.get("SENSOR_S3_DEVICE", "lopy4-exterior"),
 }
 
-# Solo los 16 bits bajos del UID (4 chars hex), que es lo que cabe en el payload Cayenne LPP.
-# El ESP32 imprime el UID completo por Serie; usa los últimos 4 chars como clave aquí.
-# Ejemplo: UID completo "A1B2C3D4" → clave "C3D4"
-NFC_AUTHORIZED = {"C3D4", "BEEF"}
+# Whitelist NFC: mapeo nombre → UID (últimos 4 caracteres hex).
+# Formato en Orion: "nombre1:C3D4,nombre2:BEEF"
+# Internamente: {"nombre1": "C3D4", "nombre2": "BEEF"}
+NFC_AUTHORIZED_DEFAULT = {"Tarjeta Principal": "C3D4", "Visitante": "BEEF"}
 AFORO_MAX      = 5
 _log_counter   = int(time.time())
 
@@ -507,6 +507,36 @@ def _normalize_uid(uid):
         return None
 
 
+def _parse_nfc_whitelist(whitelist_str):
+    """Convierte string "nombre:UID,nombre:UID" a dict {"nombre": "UID"}.
+    Fallback a NFC_AUTHORIZED_DEFAULT si string está vacío o inválido."""
+    if not whitelist_str:
+        return NFC_AUTHORIZED_DEFAULT.copy()
+
+    try:
+        wl_dict = {}
+        for pair in whitelist_str.split(','):
+            pair = pair.strip()
+            if ':' not in pair:
+                continue
+            nombre, uid = pair.split(':', 1)
+            nombre = nombre.strip()
+            uid = uid.strip().upper()
+            if nombre and len(uid) == 4 and all(c in '0123456789ABCDEF' for c in uid):
+                wl_dict[nombre] = uid
+        return wl_dict if wl_dict else NFC_AUTHORIZED_DEFAULT.copy()
+    except:
+        return NFC_AUTHORIZED_DEFAULT.copy()
+
+
+def _serialize_nfc_whitelist(wl_dict):
+    """Convierte dict {"nombre": "UID"} a string "nombre:UID,nombre:UID"."""
+    if not wl_dict:
+        return ""
+    pairs = [f"{nombre}:{uid}" for nombre, uid in sorted(wl_dict.items())]
+    return ",".join(pairs)
+
+
 def _push_whitelist_downlink():
     """Envía la whitelist actual de Orion al LoPy4 dormitorio como downlink 0x08.
     Formato: [0x08][count][uid1_hi][uid1_lo][uid2_hi][uid2_lo]...
@@ -520,32 +550,38 @@ def _push_whitelist_downlink():
             timeout=5)
         if r.status_code != 200:
             logging.warning("No se pudo leer nfcAuthorizedUIDs de Orion")
-            return
-        uids = [u.strip() for u in r.text.strip().strip('"').split(',') if u.strip()]
+            wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
+        else:
+            wl_str = r.text.strip().strip('"')
+            wl_dict = _parse_nfc_whitelist(wl_str)
     except Exception as e:
         logging.error(f"_push_whitelist_downlink: error leyendo UIDs: {e}")
-        return
+        wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
 
-    if not uids:
+    if not wl_dict:
         logging.info("Whitelist vacía, no se envía downlink")
         return
 
     payload = [0x08, 0]  # Comando 0x08, count se actualiza después
     valid_count = 0
 
-    for uid in uids[:24]:
-        val = int(uid, 16) if len(uid) == 4 else None
-        if val is None or val > 0xFFFF:
-            logging.warning(f"UID inválido descartado: {uid}")
+    for nombre, uid in sorted(wl_dict.items())[:24]:
+        try:
+            val = int(uid, 16)
+            if val > 0xFFFF:
+                logging.warning(f"UID {uid} ('{nombre}') fuera de rango, descartado")
+                continue
+            payload.append((val >> 8) & 0xFF)
+            payload.append(val & 0xFF)
+            valid_count += 1
+        except ValueError:
+            logging.warning(f"UID inválido '{uid}' ('{nombre}'), descartado")
             continue
-        payload.append((val >> 8) & 0xFF)
-        payload.append(val & 0xFF)
-        valid_count += 1
 
     payload[1] = valid_count
     if valid_count > 0:
         _downlink("Sensor:s2", payload)
-        logging.info(f"Whitelist sync downlink enviado: {valid_count} UIDs")
+        logging.info(f"Whitelist sync downlink enviado: {valid_count} UIDs ('{', '.join(list(wl_dict.keys())[:5])}')")
 
 
 # ============================================================
@@ -612,34 +648,52 @@ def r_vibracion(d, sid):
 
 
 def r_nfc(d, sid):
-    if not d.get("nfcDetected", False):
+    nfc_detected = d.get("nfcDetected", False)
+    uid_partial = int(round(d.get("nfcUidPartial", 0) * 100)) if nfc_detected else 0
+    uid = f"{uid_partial:04X}"
+
+    logging.info(f"NFC evento: detected={nfc_detected} UID={uid} sid={sid}")
+
+    if not nfc_detected:
+        logging.debug(f"Lectura NFC sin resultado en {sid}")
         return
 
-    uid_partial = int(round(d.get("nfcUidPartial", 0) * 100))
-    uid = f"{uid_partial & 0xFFFF:04X}"
+    if uid == "0000":
+        logging.debug(f"Lectura NFC vacía en {sid} (UID=0x0000)")
+        return
 
+    # Obtener whitelist y buscar alias del UID
     try:
         r = _session.get(
             f"{ORION}/v2/entities/Sensor:s2/attrs/nfcAuthorizedUIDs/value",
             headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
             timeout=5)
         if r.status_code == 200:
-            uids = set(u.strip() for u in r.text.strip().strip('"').split(',') if u.strip())
+            wl_str = r.text.strip().strip('"')
+            wl_dict = _parse_nfc_whitelist(wl_str)
         else:
-            uids = NFC_AUTHORIZED
+            wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
     except Exception as e:
         logging.warning(f"Error leyendo whitelist NFC: {e}")
-        uids = NFC_AUTHORIZED
+        wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
 
-    authorized = uid in uids
-    logging.info(f"NFC UID={uid} authorized={authorized}")
+    # Buscar alias (nombre) del UID
+    uid_alias = None
+    for nombre, stored_uid in wl_dict.items():
+        if stored_uid == uid:
+            uid_alias = nombre
+            break
+
+    authorized = uid_alias is not None
+    log_display = f"'{uid_alias}'" if uid_alias else f"UID={uid}"
+    logging.info(f"NFC {log_display} authorized={authorized}")
 
     global _log_counter
     _log_counter += 1
     _post_entity({
         "id":         f"AccessLog:{_log_counter}",
         "type":       "AccessLog",
-        "nfcUID":     {"type": "Text",         "value": uid},
+        "nfcUID":     {"type": "Text",         "value": uid_alias or uid},
         "authorized": {"type": "Boolean",      "value": authorized},
         "refSensor":  {"type": "Relationship", "value": sid},
         "timestamp":  {"type": "DateTime",     "value": datetime.now(timezone.utc).isoformat()}
@@ -650,7 +704,7 @@ def r_nfc(d, sid):
         _downlink(sid, [0x03])
         _led_manager.remove_alert(sid, "nfc_denied")
     else:
-        _alerta("nfc_denied", True, f"Acceso denegado UID={uid}", "critical", sid)
+        _alerta("nfc_denied", True, f"Acceso denegado {log_display}", "critical", sid)
         _downlink(sid, [0x04])
         _led_manager.add_alert(sid, "nfc_denied")
 
@@ -851,17 +905,26 @@ def api_get_uids():
             headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
             timeout=5)
         if r.status_code == 200:
-            uids = [u.strip() for u in r.text.strip().strip('"').split(',') if u.strip()]
-            return jsonify(sorted(uids)), 200
-        return jsonify(sorted(list(NFC_AUTHORIZED))), 200
+            wl_str = r.text.strip().strip('"')
+            wl_dict = _parse_nfc_whitelist(wl_str)
+        else:
+            wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
     except Exception as e:
         logging.error(f"api_get_uids error: {e}")
-        return jsonify({"error": str(e)}), 500
+        wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
+
+    # Retornar lista de objetos {nombre, uid}
+    result = [{"nombre": nombre, "uid": uid} for nombre, uid in sorted(wl_dict.items())]
+    return jsonify(result), 200
 
 @app.route("/api/nfc/uids", methods=["POST"])
 def api_add_uid():
     data = request.get_json(silent=True) or {}
+    nombre = data.get("nombre", "").strip()
     uid = data.get("uid", "").strip()
+
+    if not nombre:
+        return jsonify({"error": "Nombre de tarjeta requerido"}), 400
 
     normalized_uid = _normalize_uid(uid)
     if not normalized_uid:
@@ -876,32 +939,38 @@ def api_add_uid():
                 timeout=5)
 
             if r.status_code == 200:
-                uids = set(u.strip() for u in r.text.strip().strip('"').split(',') if u.strip())
+                wl_str = r.text.strip().strip('"')
+                wl_dict = _parse_nfc_whitelist(wl_str)
             else:
-                uids = set(NFC_AUTHORIZED)
+                wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
 
-            if normalized_uid in uids:
-                logging.info(f"UID {normalized_uid} ya existe en la whitelist")
-                return jsonify({"status": "ok", "message": "UID ya autorizado", "uids": sorted(list(uids))}), 200
+            # Verificar si el UID ya existe bajo otro nombre
+            for existing_name, existing_uid in wl_dict.items():
+                if existing_uid == normalized_uid:
+                    logging.info(f"UID {normalized_uid} ya existe como '{existing_name}'")
+                    return jsonify({"status": "ok", "message": f"UID ya autorizado como '{existing_name}'",
+                                    "data": [{"nombre": n, "uid": u} for n, u in sorted(wl_dict.items())]}), 200
 
-            uids.add(normalized_uid)
-            _patch("Sensor:s2", {"nfcAuthorizedUIDs": {"type": "Text", "value": ",".join(sorted(uids))}})
+            # Agregar nuevo nombre:UID
+            wl_dict[nombre] = normalized_uid
+            wl_str = _serialize_nfc_whitelist(wl_dict)
+            _patch("Sensor:s2", {"nfcAuthorizedUIDs": {"type": "Text", "value": wl_str}})
             _push_whitelist_downlink()
 
-            logging.info(f"UID {normalized_uid} añadido a la whitelist")
-            return jsonify({"status": "ok", "message": "UID añadido", "uids": sorted(list(uids))}), 200
+            logging.info(f"Tarjeta '{nombre}' ({normalized_uid}) añadida a la whitelist")
+            return jsonify({"status": "ok", "message": "Tarjeta añadida",
+                            "data": [{"nombre": n, "uid": u} for n, u in sorted(wl_dict.items())]}), 200
 
-        # Si llegamos aquí, algo falló repetidamente (no debería pasar)
         return jsonify({"error": "No se pudo actualizar la whitelist tras 3 intentos"}), 500
     except Exception as e:
         logging.error(f"api_add_uid error: {e}")
         return jsonify({"error": str(e)}), 500
 
-@app.route("/api/nfc/uids/<uid>", methods=["DELETE"])
-def api_delete_uid(uid):
-    normalized_uid = _normalize_uid(uid)
-    if not normalized_uid:
-        return jsonify({"error": "UID inválido"}), 400
+@app.route("/api/nfc/uids/<nombre>", methods=["DELETE"])
+def api_delete_uid(nombre):
+    nombre = nombre.strip()
+    if not nombre:
+        return jsonify({"error": "Nombre de tarjeta requerido"}), 400
 
     try:
         # Retry loop para manejar race conditions
@@ -912,26 +981,40 @@ def api_delete_uid(uid):
                 timeout=5)
 
             if r.status_code == 200:
-                uids = set(u.strip() for u in r.text.strip().strip('"').split(',') if u.strip())
+                wl_str = r.text.strip().strip('"')
+                wl_dict = _parse_nfc_whitelist(wl_str)
             else:
-                uids = set(NFC_AUTHORIZED)
+                wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
 
-            if normalized_uid not in uids:
-                logging.warning(f"UID {normalized_uid} no encontrado en whitelist")
-                return jsonify({"status": "ok", "message": "UID no encontrado", "uids": sorted(list(uids))}), 200
+            if nombre not in wl_dict:
+                logging.warning(f"Tarjeta '{nombre}' no encontrada en whitelist")
+                return jsonify({"status": "ok", "message": "Tarjeta no encontrada",
+                                "data": [{"nombre": n, "uid": u} for n, u in sorted(wl_dict.items())]}), 200
 
-            uids.remove(normalized_uid)
-            _patch("Sensor:s2", {"nfcAuthorizedUIDs": {"type": "Text", "value": ",".join(sorted(uids))}})
+            del wl_dict[nombre]
+            wl_str = _serialize_nfc_whitelist(wl_dict)
+            _patch("Sensor:s2", {"nfcAuthorizedUIDs": {"type": "Text", "value": wl_str}})
             _push_whitelist_downlink()
 
-            logging.info(f"UID {normalized_uid} eliminado de la whitelist")
-            return jsonify({"status": "ok", "message": "UID eliminado", "uids": sorted(list(uids))}), 200
+            logging.info(f"Tarjeta '{nombre}' eliminada de la whitelist")
+            return jsonify({"status": "ok", "message": "Tarjeta eliminada",
+                            "data": [{"nombre": n, "uid": u} for n, u in sorted(wl_dict.items())]}), 200
 
-        # Si llegamos aquí, algo falló repetidamente (no debería pasar)
         return jsonify({"error": "No se pudo actualizar la whitelist tras 3 intentos"}), 500
     except Exception as e:
         logging.error(f"api_delete_uid error: {e}")
         return jsonify({"error": str(e)}), 500
+
+@app.route("/api/nfc/sync", methods=["POST"])
+def api_nfc_sync():
+    """Fuerza sincronización explícita de la whitelist al LoPy4 dormitorio"""
+    try:
+        _push_whitelist_downlink()
+        return jsonify({"status": "ok", "message": "Sincronización de whitelist NFC iniciada"}), 200
+    except Exception as e:
+        logging.error(f"api_nfc_sync error: {e}")
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/api/led/<nodo>", methods=["POST"])
 def api_led(nodo):
