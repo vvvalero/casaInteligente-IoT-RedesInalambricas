@@ -5,7 +5,7 @@
 //   2. Los acumula en una cola FIFO de hasta MAX_QUEUE entradas
 //   3. Publica toda la cola en BLE Advertising (Manufacturer Specific Data)
 //   4. Expone servicio BLE para recibir comandos de control de LEDs
-//   5. Controla 7 indicadores con LEDs simples (on/off): 14 GPIO totales
+//   5. Controla 8 indicadores con LEDs simples (on/off): 16 GPIO totales
 //
 // El LoPy4 del dormitorio lee la cola NFC vía BLE escaneo.
 // El notification_server.py envía comandos de LED vía BLE client.
@@ -20,7 +20,7 @@
 //
 // Comando BLE LED (característica escribible):
 //   [led_id][red_on][green_on]
-//   led_id: 1-7 (qué indicador)
+//   led_id: 1-8 (qué indicador)
 //   red_on: 0 o 1 (encender LED rojo)
 //   green_on: 0 o 1 (encender LED verde)
 //   Ejemplo: [1, 0, 1] = indicador 1 verde (OK)
@@ -47,6 +47,7 @@
 //   Indicador 5 (Presión):     R=GPIO 19, G=GPIO 23
 //   Indicador 6 (Humedad):     R=GPIO 4,  G=GPIO 16
 //   Indicador 7 (Sistema):     R=GPIO 17, G=GPIO 27
+//   Indicador 8 (Acceso NFC):  R=GPIO 33, G=GPIO 14
 // ============================================================
 
 #include <Wire.h>
@@ -72,21 +73,22 @@
 #define MAX_QUEUE 4
 
 // Tiempo que un UID permanece en la cola
-#define UID_TTL_MS 90000
+#define UID_TTL_MS 35000
 
 // --- Pines de LEDs simples (rojo y verde por indicador) ---
 struct LEDPins {
     uint8_t red, green;
 };
 
-const LEDPins ledPins[7] = {
+const LEDPins ledPins[8] = {
     {25, 26},   // Indicador 1: Nodo s1 (Salón)
     {12, 13},   // Indicador 2: Nodo s2 (Dormitorio)
     {15, 2},    // Indicador 3: Nodo s3 (Exterior)
     {5, 18},    // Indicador 4: Temperatura (agregado)
     {19, 23},   // Indicador 5: Presión (agregado)
     {4, 16},    // Indicador 6: Humedad (agregado)
-    {17, 27}    // Indicador 7: Sistema general
+    {17, 27},   // Indicador 7: Sistema general
+    {33, 14}    // Indicador 8: Acceso NFC (rojo=denegado, verde=autorizado)
 };
 
 // ============================================================
@@ -97,18 +99,19 @@ struct LEDState {
     bool green;
 };
 
-LEDState ledStates[7] = {
+LEDState ledStates[8] = {
     {false, true},   // Indicador 1: Verde (OK)
     {false, true},   // Indicador 2: Verde (OK)
     {false, true},   // Indicador 3: Verde (OK)
     {false, true},   // Indicador 4: Verde (OK)
     {false, true},   // Indicador 5: Verde (OK)
     {false, true},   // Indicador 6: Verde (OK)
-    {false, true}    // Indicador 7: Verde (OK)
+    {false, true},   // Indicador 7: Verde (OK)
+    {false, false}   // Indicador 8: Apagado (sin actividad NFC)
 };
 
 static void _setLEDState(int ledIndex, bool red, bool green) {
-    if (ledIndex < 0 || ledIndex >= 7) return;
+    if (ledIndex < 0 || ledIndex >= 8) return;
 
     ledStates[ledIndex].red = red;
     ledStates[ledIndex].green = green;
@@ -143,10 +146,10 @@ class LEDCommandCallback : public BLECharacteristicCallbacks {
         uint8_t greenOn = (uint8_t)value[2];
 
         // Validar que ledIndex esté en rango [0,6]
-        if (ledIndex >= 7) {
+        if (ledIndex >= 8) {
             Serial.print("[LED] ERROR: Indicador ");
             Serial.print((uint8_t)value[0]);
-            Serial.println(" fuera de rango (debe ser 1-7)");
+            Serial.println(" fuera de rango (debe ser 1-8)");
             return;
         }
 
@@ -281,12 +284,13 @@ void setup() {
     Serial.println("\n=== ESP32 NFC-BLE Broadcaster + LED Control (simple) ===");
 
     // --- Init LEDs ---
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < 8; i++) {
         pinMode(ledPins[i].red, OUTPUT);
         pinMode(ledPins[i].green, OUTPUT);
-        _setLEDState(i, false, true);  // Verde (OK) inicial
+        bool initGreen = (i < 7);  // Indicador 8 (NFC) arranca apagado
+        _setLEDState(i, false, initGreen);
     }
-    Serial.println("[LED] 7 indicadores LED inicializados (verde)");
+    Serial.println("[LED] 8 indicadores LED inicializados");
 
     // --- Init PN532 ---
     pinMode(NFC_RST_PIN, OUTPUT);

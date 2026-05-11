@@ -469,14 +469,19 @@ def _update_attrs(eid, datos):
         logging.error(f"UPDATE error {eid}: {e}")
 
 
+def _ts_z():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
 def _alerta(tipo, active, msg, severity, sid=""):
     eid = f"Alert:{tipo}"
+    ts = _ts_z()
     attrs = {
         "active":    active,
         "message":   msg,
         "severity":  severity,
         "refSensor": sid,
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "timestamp": ts
     }
 
     # Intentar PATCH primero (entidad ya existe)
@@ -505,12 +510,15 @@ def _alerta(tipo, active, msg, severity, sid=""):
             "message":   {"type": "Text",      "value": msg},
             "severity":  {"type": "Text",      "value": severity},
             "refSensor": {"type": "Relationship", "value": sid},
-            "timestamp": {"type": "DateTime",  "value": attrs["timestamp"]}
+            "timestamp": {"type": "DateTime",  "value": ts}
         }
         r = _session.post(
             f"{ORION}/v2/entities",
             json=entity, headers=FS_HEADERS, timeout=5)
-        logging.info(f"POST {eid} → {r.status_code}")
+        if r.status_code in (200, 201):
+            logging.info(f"POST {eid} → {r.status_code}")
+        else:
+            logging.error(f"POST {eid} → {r.status_code}: {r.text[:300]}")
     except Exception as e:
         logging.error(f"POST error {eid}: {e}")
 
@@ -521,7 +529,8 @@ def _alerta(tipo, active, msg, severity, sid=""):
 
 def _downlink(sensor_id, bytes_list):
     """Agrega downlink a cola para procesamiento secuencial.
-    Si ya hay un downlink pendiente para el mismo device, lo reemplaza (dedup)."""
+    Deduplicación por (device, comando): comandos distintos coexisten en cola
+    para que el 0x08 (sync whitelist) no machaque un 0x03/0x04 (acceso)."""
     device = SENSOR_TO_TTN.get(sensor_id)
     if not device:
         return
@@ -529,9 +538,10 @@ def _downlink(sensor_id, bytes_list):
         logging.warning(f"TTN_API_KEY no configurada — downlink omitido")
         return
 
+    cmd = bytes_list[0] if bytes_list else None
     with _downlink_queue_lock:
-        for i, (d, _) in enumerate(_downlink_queue):
-            if d == device:
+        for i, (d, bl) in enumerate(_downlink_queue):
+            if d == device and (bl[0] if bl else None) == cmd:
                 _downlink_queue[i] = (device, bytes_list)
                 break
         else:
@@ -778,7 +788,7 @@ def r_vibracion(d, sid):
 def r_nfc(d, sid):
     nfc_detected = d.get("nfcDetected", False)
     uid_partial = int(round(d.get("nfcUidPartial", 0) * 100)) if nfc_detected else 0
-    uid = f"{uid_partial:04X}"
+    uid = f"{uid_partial & 0xFFFF:04X}"
 
     # Log detallado de NFC para debugging
     if nfc_detected:
@@ -820,7 +830,7 @@ def r_nfc(d, sid):
             break
 
     authorized = uid_alias is not None
-    log_display = f"'{uid_alias}'" if uid_alias else f"UID={uid}"
+    log_display = f"'{uid_alias}'" if uid_alias else f"UID:{uid}"
     logging.info(f"NFC {log_display} authorized={authorized}")
 
     global _log_counter
@@ -831,7 +841,7 @@ def r_nfc(d, sid):
         "nfcUID":     {"type": "Text",         "value": uid_alias or uid},
         "authorized": {"type": "Boolean",      "value": authorized},
         "refSensor":  {"type": "Relationship", "value": sid},
-        "timestamp":  {"type": "DateTime",     "value": datetime.now(timezone.utc).isoformat()}
+        "timestamp":  {"type": "DateTime",     "value": _ts_z()}
     })
 
     if authorized:
@@ -890,6 +900,10 @@ TODAS_REGLAS = [
     r_nfc, r_aforo, r_lux_exterior, r_presion
 ]
 
+# Reglas que crean entidades únicas por evento (AccessLog, etc.) y solo deben
+# ejecutarse desde el uplink directo, no desde suscripciones de Orion.
+REGLAS_SOLO_UPLINK = {r_nfc}
+
 # ============================================================
 # ENDPOINTS HTTP
 # ============================================================
@@ -903,6 +917,8 @@ def notify():
     for entidad in datos.get("data", []):
         sid = entidad.get("id", "")
         for regla in TODAS_REGLAS:
+            if regla in REGLAS_SOLO_UPLINK:
+                continue
             try:
                 regla(entidad, sid)
             except Exception as e:
@@ -1062,20 +1078,17 @@ def api_get_uids():
 def api_add_uid():
     data = request.get_json(silent=True) or {}
     nombre = str(data.get("nombre", "")).strip()
-    contraseña = str(data.get("contraseña", "")).strip()
+    uid_raw = str(data.get("uid", "")).strip()
 
     if not nombre or nombre == "[object Object]":
         return jsonify({"error": "Nombre de tarjeta requerido y válido"}), 400
 
-    if not contraseña:
-        return jsonify({"error": "Contraseña requerida"}), 400
+    if not uid_raw:
+        return jsonify({"error": "UID de tarjeta requerido"}), 400
 
-    # Convertir contraseña a UID de 4 caracteres hex
-    uid = _text_to_uid(contraseña)
-    if not uid:
-        return jsonify({"error": "Contraseña inválida. Debe contener al menos un carácter válido"}), 400
-
-    normalized_uid = uid
+    normalized_uid = _normalize_uid(uid_raw)
+    if not normalized_uid:
+        return jsonify({"error": "UID inválido. Debe contener caracteres hexadecimales (0-9, A-F)"}), 400
 
     try:
         # Retry loop para manejar race conditions

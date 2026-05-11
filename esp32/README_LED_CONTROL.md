@@ -1,15 +1,16 @@
-# Control de LEDs simples vía BLE — ESP32 NFC-BLE Broadcaster (7 indicadores con LEDs simples)
+# Control de LEDs simples vía BLE — ESP32 NFC-BLE Broadcaster (8 indicadores con LEDs simples)
 
 ## Descripción General
 
-El ESP32 controla **7 indicadores de estado**, cada uno compuesto por **2 LEDs simples** (rojo y verde):
+El ESP32 controla **8 indicadores de estado**, cada uno compuesto por **2 LEDs simples** (rojo y verde):
 - **Indicadores 1-3**: Estado de cada nodo (verde=OK, rojo=alerta)
 - **Indicadores 4-6**: Alertas por tipo agregadas (temperatura, presión, humedad)
 - **Indicador 7**: Estado general del sistema
+- **Indicador 8**: Acceso NFC (verde=autorizado, rojo=denegado, apagado=sin actividad)
 
 Los LEDs se actualizan automáticamente con lógica inteligente de agregación.
 
-### Mapeo de Indicadores (7 totales, 14 LEDs)
+### Mapeo de Indicadores (8 totales, 16 LEDs)
 
 | Indicador | GPIO R | GPIO G | Propósito |
 |-----------|--------|--------|-----------|
@@ -18,8 +19,9 @@ Los LEDs se actualizan automáticamente con lógica inteligente de agregación.
 | **3** | 15 | 2 | **Nodo s3 (Exterior)** |
 | **4** | 5 | 18 | **Temperatura (agregado)** |
 | **5** | 19 | 23 | **Presión (agregado)** |
-| **6** | 24 | 9 | **Humedad (agregado)** |
-| **7** | 10 | 11 | **Sistema general** |
+| **6** | 4 | 16 | **Humedad (agregado)** |
+| **7** | 17 | 27 | **Sistema general** |
+| **8** | 33 | 14 | **Acceso NFC** |
 
 ---
 
@@ -80,13 +82,29 @@ Estado crítico del sistema:
 **Estados:**
 - 🟢 **Verde** — Todo OK (solo LED verde)
 - 🟡 **Amarillo** — Hay alertas (warning: ambos LEDs)
-- 🔴 **Rojo** — Crítico (solo LED rojo: NFC denegado o vibración)
+- 🔴 **Rojo** — Crítico (solo LED rojo)
 
 **Ejemplo:**
 ```
-Sistema normal:                    Indicador 7 = Verde
-Hay varios warnings activos:        Indicador 7 = Amarillo
-Acceso NFC denegado detectado:      Indicador 7 = Rojo
+Sistema normal:              Indicador 7 = Verde
+Hay varios warnings:         Indicador 7 = Amarillo
+Estado crítico:              Indicador 7 = Rojo
+```
+
+### Indicador 8 — Acceso NFC
+
+Muestra el resultado del último intento de acceso con tarjeta NFC:
+
+**Estados:**
+- ⚫ **Apagado** — Sin actividad NFC reciente
+- 🟢 **Verde** — Último acceso autorizado
+- 🔴 **Rojo** — Último acceso denegado
+
+**Ejemplo:**
+```
+Sin tarjetas leídas:         Indicador 8 = Apagado
+Tarjeta autorizada:          Indicador 8 = Verde
+Tarjeta no reconocida:       Indicador 8 = Rojo
 ```
 
 ---
@@ -104,13 +122,16 @@ Acceso NFC denegado detectado:      Indicador 7 = Rojo
 ### Ejemplo de Comandos
 
 ```
-Indicador 1 (s1) rojo:           [0x01, 0x01, 0x00]
-Indicador 2 (s2) verde:          [0x02, 0x00, 0x01]
-Indicador 3 (s3) amarillo:       [0x03, 0x01, 0x01]
-Indicador 4 (Temp) rojo:         [0x04, 0x01, 0x00]
-Indicador 5 (Presión) verde:     [0x05, 0x00, 0x01]
-Indicador 6 (Humedad) amarillo:  [0x06, 0x01, 0x01]
-Indicador 7 (Sistema) apagado:   [0x07, 0x00, 0x00]
+Indicador 1 (s1) rojo:              [0x01, 0x01, 0x00]
+Indicador 2 (s2) verde:             [0x02, 0x00, 0x01]
+Indicador 3 (s3) amarillo:          [0x03, 0x01, 0x01]
+Indicador 4 (Temp) rojo:            [0x04, 0x01, 0x00]
+Indicador 5 (Presión) verde:        [0x05, 0x00, 0x01]
+Indicador 6 (Humedad) amarillo:     [0x06, 0x01, 0x01]
+Indicador 7 (Sistema) apagado:      [0x07, 0x00, 0x00]
+Indicador 8 (NFC) acceso autorizado:[0x08, 0x00, 0x01]
+Indicador 8 (NFC) acceso denegado:  [0x08, 0x01, 0x00]
+Indicador 8 (NFC) sin actividad:    [0x08, 0x00, 0x00]
 ```
 
 Los comandos se envían automáticamente desde `notification_server.py` mediante la clase `LEDStateManager`, que calcula el estado correcto de cada indicador según las alertas activas.
@@ -134,21 +155,23 @@ Cada indicador necesita:
 - 1 LED verde (ánodo → GPIO, cátodo → GND con resistencia)
 - Resistencia por LED: ~220Ω (para ~20mA a 2V)
 
-**Pines usados (14 total, 2 por indicador):**
+**Pines usados (16 total, 2 por indicador):**
 ```
-Indicador 1 (s1):        GPIO 25 (R), 26 (G)
-Indicador 2 (s2):        GPIO 12 (R), 13 (G)
-Indicador 3 (s3):        GPIO 15 (R), 2 (G)
-Indicador 4 (Temp):      GPIO 5 (R), 18 (G)
-Indicador 5 (Presión):   GPIO 19 (R), 23 (G)
-Indicador 6 (Humedad):   GPIO 24 (R), 9 (G)
-Indicador 7 (Sistema):   GPIO 10 (R), 11 (G)
+Indicador 1 (s1):         GPIO 25 (R), 26 (G)
+Indicador 2 (s2):         GPIO 12 (R), 13 (G)
+Indicador 3 (s3):         GPIO 15 (R), 2 (G)
+Indicador 4 (Temp):       GPIO 5 (R),  18 (G)
+Indicador 5 (Presión):    GPIO 19 (R), 23 (G)
+Indicador 6 (Humedad):    GPIO 4 (R),  16 (G)
+Indicador 7 (Sistema):    GPIO 17 (R), 27 (G)
+Indicador 8 (Acceso NFC): GPIO 33 (R), 14 (G)
 ```
 
 **Reservados (no disponibles):**
 - GPIO 21, 22: I²C para PN532
 - GPIO 32: Reset del PN532
-- GPIO 34-39: Solo entrada analógica (sin soporte digital)
+- GPIO 6-11: SPI flash interna (NO USAR)
+- GPIO 34-39: Solo entrada, sin salida digital
 
 ---
 

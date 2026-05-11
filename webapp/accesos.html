@@ -61,17 +61,17 @@
                             </div>
 
                             <div class="form-group">
-                                <label for="new-contraseña" style="display: block; font-size: 0.9rem; font-weight: 500; margin-bottom: 0.5rem; color: var(--text-primary);">
-                                    Contraseña
+                                <label for="new-uid" style="display: block; font-size: 0.9rem; font-weight: 500; margin-bottom: 0.5rem; color: var(--text-primary);">
+                                    UID de la Tarjeta
                                 </label>
-                                <input type="password" id="new-contraseña"
-                                    placeholder="Ej: hola, 1234, miContraseña"
-                                    style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: 8px; font-size: 1rem; transition: all 0.2s; box-sizing: border-box;"
+                                <input type="text" id="new-uid"
+                                    placeholder="Ej: D23C, A1B2C3D4"
+                                    style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: 8px; font-size: 1rem; font-family: monospace; text-transform: uppercase; transition: all 0.2s; box-sizing: border-box;"
                                     onfocus="this.style.borderColor='var(--accent)'; this.style.boxShadow='0 0 0 3px rgba(99, 102, 241, 0.1)';"
                                     onblur="this.style.borderColor='var(--border-color)'; this.style.boxShadow='none';"
                                     required>
                                 <small style="display: block; color: var(--text-muted); margin-top: 0.5rem; font-size: 0.85rem;">
-                                    La contraseña se convierte automáticamente a código hexadecimal
+                                    UID físico de la tarjeta (se muestra en el log cuando la acercas al sensor)
                                 </small>
                             </div>
 
@@ -118,8 +118,8 @@
             document.getElementById('add-uid-form').addEventListener('submit', (e) => {
                 e.preventDefault();
                 const nombre = document.getElementById('new-nombre').value.trim();
-                const contraseña = document.getElementById('new-contraseña').value.trim();
-                addUID(nombre, contraseña);
+                const uid = document.getElementById('new-uid').value.trim();
+                addUID(nombre, uid);
             });
         });
     </script>
