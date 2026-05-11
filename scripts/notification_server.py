@@ -1037,7 +1037,11 @@ def api_delete_uid(nombre):
                 timeout=5)
 
             if r.status_code == 200:
-                wl_str = r.text.strip().strip('"')
+                try:
+                    data = r.json()
+                    wl_str = data.get("value", "") if isinstance(data, dict) else str(data)
+                except:
+                    wl_str = r.text.strip().strip('"')
                 wl_dict = _parse_nfc_whitelist(wl_str)
             else:
                 wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
