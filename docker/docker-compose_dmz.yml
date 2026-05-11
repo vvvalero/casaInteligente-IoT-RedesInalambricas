@@ -157,13 +157,10 @@ services:
     container_name: smarthome-notification
     networks:
       - smarthome-net
+    env_file:
+      - ../.env
     environment:
       - ORION_URL=http://orion:1026
-      - TTN_APP_ID=${TTN_APP_ID}
-      - TTN_API_KEY=${TTN_API_KEY}
-      - SENSOR_S1_DEVICE=${SENSOR_S1_DEVICE}
-      - SENSOR_S2_DEVICE=${SENSOR_S2_DEVICE}
-      - SENSOR_S3_DEVICE=${SENSOR_S3_DEVICE}
     depends_on:
       orion:
         condition: service_healthy

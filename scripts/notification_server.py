@@ -30,9 +30,9 @@ logging.basicConfig(level=logging.INFO,
 _session = requests.Session()
 retry_strategy = Retry(
     total=3,
-    status_forcelist=[429, 500, 502, 503, 504],
+    status_forcelist=[500, 502, 503, 504],
     allowed_methods=["GET", "POST", "PATCH"],
-    backoff_factor=0.5  # Exponential backoff: 0.5s, 1s, 2s
+    backoff_factor=0.5
 )
 adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=20, pool_maxsize=20)
 _session.mount("http://", adapter)
@@ -444,11 +444,13 @@ def _post_entity(entity):
 def _update_attrs(eid, datos):
     """Actualiza atributos escalares del sensor en Orion vía PATCH keyValues.
     Filtra objetos anidados y duplicados con sufijo de canal Cayenne LPP (_N)."""
+    # Campos LPP genéricos sin semántica en Orion (son artefactos del primer canal de cada tipo)
+    _LPP_GENERIC = {"analogInput", "digitalInput", "raw_hex"}
     attrs = {}
     for k, v in datos.items():
         if isinstance(v, (dict, list)):
             continue
-        if k == "raw_hex":
+        if k in _LPP_GENERIC:
             continue
         # Los sufijos _N son duplicados del decodificador Cayenne LPP (temperature_1, humidity_2…)
         if re.search(r'_\d+$', k):
@@ -518,7 +520,8 @@ def _alerta(tipo, active, msg, severity, sid=""):
 # ============================================================
 
 def _downlink(sensor_id, bytes_list):
-    """Agrega downlink a cola para procesamiento secuencial (evita rate limiting de TTN)"""
+    """Agrega downlink a cola para procesamiento secuencial.
+    Si ya hay un downlink pendiente para el mismo device, lo reemplaza (dedup)."""
     device = SENSOR_TO_TTN.get(sensor_id)
     if not device:
         return
@@ -527,7 +530,12 @@ def _downlink(sensor_id, bytes_list):
         return
 
     with _downlink_queue_lock:
-        _downlink_queue.append((device, bytes_list))
+        for i, (d, _) in enumerate(_downlink_queue):
+            if d == device:
+                _downlink_queue[i] = (device, bytes_list)
+                break
+        else:
+            _downlink_queue.append((device, bytes_list))
     _downlink_queue_event.set()
 
 
@@ -545,7 +553,7 @@ def _downlink_worker():
                     device, bytes_list = _downlink_queue.pop(0)
 
                 # Enviar downlink fuera del lock
-                url = f"{TTN_API_BASE}/as/applications/{TTN_APP_ID}/devices/{device}/down/push"
+                url = f"{TTN_API_BASE}/as/applications/{TTN_APP_ID}/devices/{device}/down/replace"
                 hdrs = {
                     "Authorization": f"Bearer {TTN_API_KEY}",
                     "Content-Type": "application/json"
@@ -557,11 +565,16 @@ def _downlink_worker():
                 }]}
                 try:
                     r = _session.post(url, json=body, headers=hdrs, timeout=5)
-                    logging.info(f"Downlink {device} {bytes_list} → {r.status_code}")
+                    if r.status_code == 429:
+                        logging.warning(f"Downlink rate limited (429) para {device}, esperando 10s")
+                        time.sleep(10)
+                    elif r.status_code not in (200, 204):
+                        logging.error(f"Downlink {device} {bytes_list} → {r.status_code}: {r.text[:200]}")
+                    else:
+                        logging.info(f"Downlink {device} {bytes_list} → {r.status_code}")
                 except Exception as e:
                     logging.error(f"Downlink error {device}: {e}")
 
-                # Esperar entre downlinks para evitar rate limiting
                 time.sleep(_DOWNLINK_DELAY_MS / 1000.0)
 
         except Exception as e:
