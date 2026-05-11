@@ -509,23 +509,38 @@ def _normalize_uid(uid):
 
 def _parse_nfc_whitelist(whitelist_str):
     """Convierte string "nombre:UID,nombre:UID" a dict {"nombre": "UID"}.
+    También migra formato antiguo "UID,UID" generando nombres automáticos.
     Fallback a NFC_AUTHORIZED_DEFAULT si string está vacío o inválido."""
     if not whitelist_str:
         return NFC_AUTHORIZED_DEFAULT.copy()
 
     try:
         wl_dict = {}
+        tarjeta_counter = 1
+
         for pair in whitelist_str.split(','):
             pair = pair.strip()
-            if ':' not in pair:
+            if not pair:
                 continue
-            nombre, uid = pair.split(':', 1)
-            nombre = nombre.strip()
-            uid = uid.strip().upper()
-            if nombre and len(uid) == 4 and all(c in '0123456789ABCDEF' for c in uid):
-                wl_dict[nombre] = uid
+
+            # Formato nuevo: "nombre:UID"
+            if ':' in pair:
+                nombre, uid = pair.split(':', 1)
+                nombre = nombre.strip()
+                uid = uid.strip().upper()
+                if nombre and len(uid) == 4 and all(c in '0123456789ABCDEF' for c in uid):
+                    wl_dict[nombre] = uid
+            # Formato antiguo: solo "UID" (migración automática)
+            else:
+                uid = pair.upper()
+                if len(uid) == 4 and all(c in '0123456789ABCDEF' for c in uid):
+                    nombre = f"Tarjeta {tarjeta_counter}"
+                    wl_dict[nombre] = uid
+                    tarjeta_counter += 1
+
         return wl_dict if wl_dict else NFC_AUTHORIZED_DEFAULT.copy()
-    except:
+    except Exception as e:
+        logging.error(f"Error parseando whitelist: {e}")
         return NFC_AUTHORIZED_DEFAULT.copy()
 
 
