@@ -560,10 +560,10 @@ def _parse_nfc_whitelist(whitelist_str):
                     wl_dict[nombre] = uid
                     tarjeta_counter += 1
 
-        return wl_dict if wl_dict else NFC_AUTHORIZED_DEFAULT.copy()
+        return wl_dict
     except Exception as e:
         logging.error(f"Error parseando whitelist: {e}")
-        return NFC_AUTHORIZED_DEFAULT.copy()
+        return {}
 
 
 def _serialize_nfc_whitelist(wl_dict):
@@ -693,14 +693,17 @@ def r_nfc(d, sid):
     uid_partial = int(round(d.get("nfcUidPartial", 0) * 100)) if nfc_detected else 0
     uid = f"{uid_partial:04X}"
 
-    logging.info(f"NFC evento: detected={nfc_detected} UID={uid} sid={sid}")
+    # Log detallado de NFC para debugging
+    if nfc_detected:
+        logging.info(f"[NFC] TARJETA DETECTADA: UID={uid} en {sid}")
+    else:
+        logging.debug(f"[NFC] Sin lectura en {sid} (nfcDetected={nfc_detected}, nfcUidPartial={d.get('nfcUidPartial', 0)})")
 
     if not nfc_detected:
-        logging.debug(f"Lectura NFC sin resultado en {sid}")
         return
 
     if uid == "0000":
-        logging.debug(f"Lectura NFC vacía en {sid} (UID=0x0000)")
+        logging.warning(f"[NFC] Lectura vacía en {sid} (UID=0x0000) - revisa el hardware NFC")
         return
 
     # Obtener whitelist y buscar alias del UID
@@ -996,10 +999,14 @@ def api_add_uid():
                 timeout=5)
 
             if r.status_code == 200:
-                wl_str = r.text.strip().strip('"')
+                try:
+                    data = r.json()
+                    wl_str = data.get("value", "") if isinstance(data, dict) else str(data)
+                except:
+                    wl_str = r.text.strip().strip('"')
                 wl_dict = _parse_nfc_whitelist(wl_str)
             else:
-                wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
+                wl_dict = {}
 
             # Verificar si el UID ya existe bajo otro nombre
             for existing_name, existing_uid in wl_dict.items():
