@@ -373,21 +373,20 @@ async function fetchUIDs() {
     }
 }
 
-async function addUID(nombre, uid) {
+async function addUID(nombre, contraseña) {
     if (!nombre.trim()) {
         alert("El nombre de la tarjeta es requerido");
         return;
     }
-    const normalized = normalizeUID(uid);
-    if (!normalized) {
-        alert("UID inválido. Debe contener al menos un carácter hexadecimal (0-9, A-F)");
+    if (!contraseña.trim()) {
+        alert("La contraseña es requerida");
         return;
     }
     try {
         const res = await fetch(`${API_BASE}/nfc/uids`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({nombre: nombre.trim(), uid: normalized})
+            body: JSON.stringify({nombre: nombre.trim(), contraseña: contraseña.trim()})
         });
         const data = await res.json();
         if (!res.ok) {
@@ -395,7 +394,7 @@ async function addUID(nombre, uid) {
             return;
         }
         document.getElementById('new-nombre').value = '';
-        document.getElementById('new-uid').value = '';
+        document.getElementById('new-contraseña').value = '';
         fetchUIDs();
     } catch(e) {
         alert("Error al registrar la tarjeta: " + e.message);

@@ -495,6 +495,23 @@ def _downlink(sensor_id, bytes_list):
         logging.error(f"Downlink error {device}: {e}")
 
 
+def _text_to_uid(text):
+    """Convierte texto a UID de 4 caracteres hex.
+    Ejemplo: 'hola' → b'hola'.hex() → '686f6c61' → '6c61' (últimos 4)
+    Retorna 4 caracteres en mayúscula, o None si es inválido."""
+    try:
+        if not text or len(text.strip()) == 0:
+            return None
+        text = text.strip()
+        # Convertir a bytes UTF-8 y luego a hex
+        hex_str = text.encode('utf-8').hex().upper()
+        if len(hex_str) == 0:
+            return None
+        return hex_str[-4:]  # Últimos 4 caracteres hex
+    except:
+        return None
+
+
 def _normalize_uid(uid):
     """Normaliza UID a 4 caracteres hex (últimos 4 dígitos).
     Retorna 4 caracteres en mayúscula, o None si es inválido."""
@@ -510,6 +527,7 @@ def _normalize_uid(uid):
 def _parse_nfc_whitelist(whitelist_str):
     """Convierte string "nombre:UID,nombre:UID" a dict {"nombre": "UID"}.
     También migra formato antiguo "UID,UID" generando nombres automáticos.
+    Acepta UIDs de cualquier longitud (4 o 8+ caracteres) y usa los últimos 4.
     Fallback a NFC_AUTHORIZED_DEFAULT si string está vacío o inválido."""
     if not whitelist_str:
         return NFC_AUTHORIZED_DEFAULT.copy()
@@ -525,15 +543,19 @@ def _parse_nfc_whitelist(whitelist_str):
 
             # Formato nuevo: "nombre:UID"
             if ':' in pair:
-                nombre, uid = pair.split(':', 1)
+                nombre, uid_raw = pair.split(':', 1)
                 nombre = nombre.strip()
-                uid = uid.strip().upper()
-                if nombre and len(uid) == 4 and all(c in '0123456789ABCDEF' for c in uid):
+                uid_raw = uid_raw.strip().upper()
+                # Tomar últimos 4 caracteres si es más largo
+                uid = uid_raw[-4:] if len(uid_raw) >= 4 else uid_raw
+                if nombre and all(c in '0123456789ABCDEF' for c in uid) and len(uid) == 4:
                     wl_dict[nombre] = uid
             # Formato antiguo: solo "UID" (migración automática)
             else:
-                uid = pair.upper()
-                if len(uid) == 4 and all(c in '0123456789ABCDEF' for c in uid):
+                uid_raw = pair.upper()
+                # Tomar últimos 4 caracteres si es más largo
+                uid = uid_raw[-4:] if len(uid_raw) >= 4 else uid_raw
+                if all(c in '0123456789ABCDEF' for c in uid) and len(uid) == 4:
                     nombre = f"Tarjeta {tarjeta_counter}"
                     wl_dict[nombre] = uid
                     tarjeta_counter += 1
@@ -567,7 +589,11 @@ def _push_whitelist_downlink():
             logging.warning("No se pudo leer nfcAuthorizedUIDs de Orion")
             wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
         else:
-            wl_str = r.text.strip().strip('"')
+            try:
+                data = r.json()
+                wl_str = data.get("value", "") if isinstance(data, dict) else str(data)
+            except:
+                wl_str = r.text.strip().strip('"')
             wl_dict = _parse_nfc_whitelist(wl_str)
     except Exception as e:
         logging.error(f"_push_whitelist_downlink: error leyendo UIDs: {e}")
@@ -684,7 +710,11 @@ def r_nfc(d, sid):
             headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
             timeout=5)
         if r.status_code == 200:
-            wl_str = r.text.strip().strip('"')
+            try:
+                data = r.json()
+                wl_str = data.get("value", "") if isinstance(data, dict) else str(data)
+            except:
+                wl_str = r.text.strip().strip('"')
             wl_dict = _parse_nfc_whitelist(wl_str)
         else:
             wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
@@ -920,7 +950,12 @@ def api_get_uids():
             headers={k:v for k,v in FS_HEADERS.items() if k != 'Content-Type'},
             timeout=5)
         if r.status_code == 200:
-            wl_str = r.text.strip().strip('"')
+            # Orion devuelve {"type":"Text","value":"..."} o simplemente "..."
+            try:
+                data = r.json()
+                wl_str = data.get("value", "") if isinstance(data, dict) else str(data)
+            except:
+                wl_str = r.text.strip().strip('"')
             wl_dict = _parse_nfc_whitelist(wl_str)
         else:
             wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
@@ -936,14 +971,20 @@ def api_get_uids():
 def api_add_uid():
     data = request.get_json(silent=True) or {}
     nombre = str(data.get("nombre", "")).strip()
-    uid = str(data.get("uid", "")).strip()
+    contraseña = str(data.get("contraseña", "")).strip()
 
     if not nombre or nombre == "[object Object]":
         return jsonify({"error": "Nombre de tarjeta requerido y válido"}), 400
 
-    normalized_uid = _normalize_uid(uid)
-    if not normalized_uid:
-        return jsonify({"error": "UID inválido. Debe ser hexadecimal (0-9, A-F)"}), 400
+    if not contraseña:
+        return jsonify({"error": "Contraseña requerida"}), 400
+
+    # Convertir contraseña a UID de 4 caracteres hex
+    uid = _text_to_uid(contraseña)
+    if not uid:
+        return jsonify({"error": "Contraseña inválida. Debe contener al menos un carácter válido"}), 400
+
+    normalized_uid = uid
 
     try:
         # Retry loop para manejar race conditions
