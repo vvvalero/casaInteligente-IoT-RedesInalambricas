@@ -248,7 +248,7 @@ static int _queueCount() {
 // ============================================================
 
 static void _buildAndStartAdvertising() {
-    String mfr;
+    std::string mfr;
     mfr += (char)COMPANY_ID_LOW;
     mfr += (char)COMPANY_ID_HIGH;
     mfr += 'N'; mfr += 'F'; mfr += 'C';
