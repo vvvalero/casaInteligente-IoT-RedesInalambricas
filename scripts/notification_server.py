@@ -528,9 +528,9 @@ def _parse_nfc_whitelist(whitelist_str):
     """Convierte string "nombre:UID,nombre:UID" a dict {"nombre": "UID"}.
     También migra formato antiguo "UID,UID" generando nombres automáticos.
     Acepta UIDs de cualquier longitud (4 o 8+ caracteres) y usa los últimos 4.
-    Fallback a NFC_AUTHORIZED_DEFAULT si string está vacío o inválido."""
-    if not whitelist_str:
-        return NFC_AUTHORIZED_DEFAULT.copy()
+    Devuelve dict vacío si whitelist_str está vacío (no fallback a defaults)."""
+    if not whitelist_str or whitelist_str.strip() == "":
+        return {}
 
     try:
         wl_dict = {}
@@ -587,7 +587,7 @@ def _push_whitelist_downlink():
             timeout=5)
         if r.status_code != 200:
             logging.warning("No se pudo leer nfcAuthorizedUIDs de Orion")
-            wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
+            wl_dict = {}
         else:
             try:
                 data = r.json()
@@ -597,7 +597,7 @@ def _push_whitelist_downlink():
             wl_dict = _parse_nfc_whitelist(wl_str)
     except Exception as e:
         logging.error(f"_push_whitelist_downlink: error leyendo UIDs: {e}")
-        wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
+        wl_dict = {}
 
     if not wl_dict:
         logging.info("Whitelist vacía, no se envía downlink")
@@ -717,10 +717,10 @@ def r_nfc(d, sid):
                 wl_str = r.text.strip().strip('"')
             wl_dict = _parse_nfc_whitelist(wl_str)
         else:
-            wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
+            wl_dict = {}
     except Exception as e:
         logging.warning(f"Error leyendo whitelist NFC: {e}")
-        wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
+        wl_dict = {}
 
     # Buscar alias (nombre) del UID
     uid_alias = None
@@ -958,10 +958,11 @@ def api_get_uids():
                 wl_str = r.text.strip().strip('"')
             wl_dict = _parse_nfc_whitelist(wl_str)
         else:
-            wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
+            # Si Orion devuelve error, devolver lista vacía (no tarjetas por defecto)
+            wl_dict = {}
     except Exception as e:
         logging.error(f"api_get_uids error: {e}")
-        wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
+        wl_dict = {}
 
     # Retornar lista de objetos {nombre, uid}
     result = [{"nombre": nombre, "uid": uid} for nombre, uid in sorted(wl_dict.items())]
@@ -1044,7 +1045,7 @@ def api_delete_uid(nombre):
                     wl_str = r.text.strip().strip('"')
                 wl_dict = _parse_nfc_whitelist(wl_str)
             else:
-                wl_dict = NFC_AUTHORIZED_DEFAULT.copy()
+                wl_dict = {}
 
             if nombre not in wl_dict:
                 logging.warning(f"Tarjeta '{nombre}' no encontrada en whitelist")
