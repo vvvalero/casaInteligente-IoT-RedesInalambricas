@@ -257,39 +257,17 @@ _led_queue_lock = threading.Lock()
 _LED_QUEUE_MAX_SIZE = 50  # Límite para evitar OOM
 
 def _send_led(led_id, red_on, green_on):
-    """Envía comando de LED al ESP32 vía BLE con cola de respaldo (máx 50 comandos)"""
-    global _led_command_queue
-
-    if not BLEAK_AVAILABLE or not _ble_client:
-        return False
-
+    """Envía comando de LED al LoPy4 dormitorio por LoRaWAN.
+    El LoPy reenvía el comando por BLE al ESP32."""
     # Validar que led_id esté en rango [1,6]
     if led_id < 1 or led_id > 6:
-        logging.error(f"[BLE] Indicador {led_id} inválido (debe ser 1-6)")
+        logging.error(f"[LORA] Indicador {led_id} inválido (debe ser 1-6)")
         return False
 
-    # Intentar enviar directamente
-    if _ble_client.send_led(led_id, red_on, green_on):
-        # Éxito, limpiar comandos de la cola para este LED (deduplicación)
-        with _led_queue_lock:
-            _led_command_queue = [(id, r, g) for id, r, g in _led_command_queue if id != led_id]
-        return True
-
-    # Si falla y no está conectado, agregar a cola (con límite de tamaño)
-    if not _ble_client.connected:
-        with _led_queue_lock:
-            # Remover comando anterior del mismo LED (deduplicación)
-            _led_command_queue = [(id, r, g) for id, r, g in _led_command_queue if id != led_id]
-
-            # Agregar nuevo comando si hay espacio
-            if len(_led_command_queue) < _LED_QUEUE_MAX_SIZE:
-                _led_command_queue.append((led_id, red_on, green_on))
-                logging.debug(f"[BLE] Comando indicador {led_id} agregado a cola (desconectado, {len(_led_command_queue)}/{_LED_QUEUE_MAX_SIZE})")
-            else:
-                logging.warning(f"[BLE] Cola de LEDs llena ({_LED_QUEUE_MAX_SIZE}), descartando indicador {led_id}")
-        return False
-
-    return False
+    payload = [0x09, led_id, 1 if red_on else 0, 1 if green_on else 0]
+    _downlink("Sensor:s2", payload)
+    logging.info(f"[LORA] Indicador {led_id} → R={1 if red_on else 0} G={1 if green_on else 0}")
+    return True
 
 def _flush_led_queue():
     """Envía todos los comandos pendientes de la cola"""
@@ -554,10 +532,18 @@ def _downlink(sensor_id, bytes_list, replace=False, confirmed=False):
         logging.warning(f"TTN_API_KEY no configurada — downlink omitido")
         return
 
-    cmd = bytes_list[0] if bytes_list else None
+    def _cmd_key(payload):
+        if not payload:
+            return (None, None)
+        cmd = payload[0]
+        if cmd == 0x09 and len(payload) > 1:
+            return (cmd, payload[1])
+        return (cmd, None)
+
+    cmd_key = _cmd_key(bytes_list)
     with _downlink_queue_lock:
         for i, (d, bl, _r, _c) in enumerate(_downlink_queue):
-            if d == device and (bl[0] if bl else None) == cmd:
+            if d == device and _cmd_key(bl) == cmd_key:
                 _downlink_queue[i] = (device, bytes_list, replace, confirmed)
                 break
         else:
@@ -763,37 +749,50 @@ def _push_whitelist_downlink(force=False):
 # REGLAS DE AUTOMATIZACIÓN
 # ============================================================
 
-def r_temp_alta(d, sid):
+def r_temp(d, sid):
     t = d.get("temperature")
     if t is None:
         return
-    if t > 28:
+
+    temp_high = t > 28
+    temp_low = t < 10
+
+    prev_high = _alert_states.get((sid, "temp_high"), False)
+    prev_low = _alert_states.get((sid, "temp_low"), False)
+
+    if temp_high:
         logging.warning(f"Temp alta {t}C en {sid}")
         _alerta("temp_high", True, f"Temperatura alta: {t}C", "warning", sid)
         if _state_changed(sid, "temp_high", True):
             _downlink(sid, [0x06, 0x01])
+
+        _alerta("temp_low", False, "", "info", sid)
+        _state_changed(sid, "temp_low", False)
         _led_manager.add_alert(sid, "temp")
-    else:
-        _alerta("temp_high", False, "", "info", sid)
-        if _state_changed(sid, "temp_high", False):
-            _downlink(sid, [0x06, 0x02])
-        _led_manager.remove_alert(sid, "temp")
 
-
-def r_temp_baja(d, sid):
-    t = d.get("temperature")
-    if t is None:
-        return
-    if t < 10:
+    elif temp_low:
         logging.warning(f"Temp baja {t}C en {sid}")
         _alerta("temp_low", True, f"Temperatura baja: {t}C", "warning", sid)
         if _state_changed(sid, "temp_low", True):
             _downlink(sid, [0x06, 0x00])
+
+        _alerta("temp_high", False, "", "info", sid)
+        _state_changed(sid, "temp_high", False)
         _led_manager.add_alert(sid, "temp")
+
     else:
+        _alerta("temp_high", False, "", "info", sid)
         _alerta("temp_low", False, "", "info", sid)
+
+        cleared = False
+        if _state_changed(sid, "temp_high", False):
+            cleared = True
         if _state_changed(sid, "temp_low", False):
+            cleared = True
+
+        if prev_high or prev_low or cleared:
             _downlink(sid, [0x06, 0x02])
+
         _led_manager.remove_alert(sid, "temp")
 
 
@@ -897,12 +896,10 @@ def r_nfc(d, sid):
     if authorized:
         _alerta("nfc_denied", False, "", "info", sid)
         _downlink(sid, [0x03])
-        _send_led(6, False, True)
         _led_manager.remove_alert(sid, "nfc_denied")
     else:
         _alerta("nfc_denied", True, f"Acceso denegado {log_display}", "critical", sid)
         _downlink(sid, [0x04])
-        _send_led(6, True, False)
         _led_manager.add_alert(sid, "nfc_denied")
 
 
@@ -937,7 +934,7 @@ def r_lux_exterior(d, sid):
 
 
 TODAS_REGLAS = [
-    r_temp_alta, r_temp_baja, r_humedad, r_vibracion,
+    r_temp, r_humedad, r_vibracion,
     r_nfc, r_aforo, r_lux_exterior
 ]
 

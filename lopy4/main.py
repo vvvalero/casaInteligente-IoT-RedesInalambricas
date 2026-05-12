@@ -23,9 +23,11 @@
 #     0x03 = acceso NFC concedido  (LED verde)
 #     0x04 = acceso NFC denegado   (LED rojo)
 #     0x05 = alerta aforo BLE      (LED amarillo)
-#     0x06 = alerta temperatura    (byte 1: 0=frio→azul, 1=calor→naranja)
+#     0x06 = alerta sensores       (byte 1: 0=frio→azul, 1=calor→naranja,
+#                                   2=normal→verde, 3=humedad→amarillo)
 #     0x07 = alerta exterior       (LED blanco)
 #     0x08 = sync whitelist NFC    (byte 1=count, luego 2 bytes por UID)
+#     0x09 = comando LED ESP32     (bytes 1=led_id 2=red_on 3=green_on)
 # ============================================================
 
 import socket
@@ -343,9 +345,15 @@ def _procesar_downlink(data):
         if data[1] == 0:
             parpadear(led_azul, veces=3)
             led_azul()
-        else:
+        elif data[1] == 1:
             parpadear(led_naranja, veces=3)
             led_naranja()
+        elif data[1] == 2:
+            parpadear(led_verde, veces=2)
+            led_verde()
+        elif data[1] == 3:
+            parpadear(led_amarillo, veces=3)
+            led_amarillo()
     elif cmd == 0x07:
         parpadear(led_blanco, veces=2)
     elif cmd == 0x08 and len(data) >= 2:
@@ -360,6 +368,16 @@ def _procesar_downlink(data):
         NFC_WHITELIST_LOCAL.update(nueva_wl)
         _guardar_whitelist(NFC_WHITELIST_LOCAL)
         print('  Whitelist sincronizada: {}'.format(NFC_WHITELIST_LOCAL))
+    elif cmd == 0x09 and len(data) >= 4:
+        led_id = data[1]
+        red_on = data[2]
+        green_on = data[3]
+        if NODE_TYPE == 'dormitorio' and _ble and ESP32_NFC_MAC:
+            ok = _ble.enviar_comando_led(ESP32_NFC_MAC, led_id, red_on, green_on)
+            if not ok:
+                print('  BLE LED: error enviando a ESP32')
+        else:
+            print('  BLE LED: ESP32 no disponible en este nodo')
     else:
         print('  Downlink desconocido: 0x{:02X}'.format(cmd))
 

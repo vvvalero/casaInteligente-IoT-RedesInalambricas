@@ -120,7 +120,8 @@ Indicador 6 (NFC) esperando:          [0x06, 0x01, 0x01]
 Indicador 6 (NFC) sin actividad:      [0x06, 0x00, 0x00]
 ```
 
-Los comandos se envían automáticamente desde `notification_server.py` mediante la clase `LEDStateManager`, que calcula el estado correcto de cada indicador según las alertas activas.
+Los comandos se envían automáticamente desde `notification_server.py` mediante la clase `LEDStateManager`.
+El servidor envía un **downlink LoRaWAN al LoPy4 del dormitorio**, y el LoPy reenvía el comando por BLE al ESP32.
 
 ---
 
@@ -184,42 +185,8 @@ Sketch → Upload
 
 ## Software — Backend Python
 
-### Instalación
-```bash
-pip install bleak==0.21.1
-```
-
-Verifica que `requirements.txt` contenga:
-```
-bleak==0.21.1
-```
-
-### Configuración
-El servidor busca automáticamente el ESP32 por nombre BLE: **"ESP32-NFC-Door"**
-
-Si quieres cambiar el nombre, edita en `nfc_ble_broadcaster.ino`:
-```cpp
-BLEDevice::init("ESP32-NFC-Door");  // ← Cambiar aquí
-```
-
-Y en `notification_server.py`:
-```python
-_ble_client = BLELEDClient(device_name="ESP32-NFC-Door")  // ← Cambiar aquí
-```
-
-### Logs
-El servidor mostrará:
-```
-[BLE] Cliente BLE iniciando...
-[BLE] ESP32 encontrado: 5c:cf:7f:12:34:56
-[BLE] Conectado a ESP32-NFC-Door
-[BLE] Indicador 1 → ROJO (alerta)
-```
-
-Si hay error:
-```
-[BLE] bleak no instalada. Control BLE de LEDs desactivado.
-```
+El servidor **no necesita BLE** para controlar los LEDs. Solo envía downlinks LoRaWAN al LoPy4,
+que es quien se conecta por BLE al ESP32.
 
 ---
 
@@ -234,18 +201,18 @@ Si hay error:
 ### El ESP32 no se detecta por BLE
 1. ✓ Abre Monitor Serial y verifica que se inicialice correctamente
 2. ✓ Busca manualmente: `BTLEScanner` o `nRFConnect` en móvil
-3. ✓ Verifica que el servidor Python esté corriendo
-4. ✓ Espera ~5 segundos, el cliente BLE busca con timeout de 5s
+3. ✓ Verifica que el LoPy4 del dormitorio esté encendido y con `ESP32_NFC_MAC`
+4. ✓ Espera ~5 segundos, el LoPy hace escaneo BLE periódico
 
 ### Errores de compilación Arduino
 1. ✓ Instala todas las librerías mencionadas
 2. ✓ Selecciona placa ESP32 Dev Module correctamente
 3. ✓ Verifica que GPIO 21/22 no entren en conflicto (I²C por defecto)
 
-### El servidor no conecta al ESP32
-1. ✓ Instala bleak: `pip install bleak`
-2. ✓ Si está en Docker, bleak puede no funcionar bien (limitación del contenedor)
-3. ✓ Revisa logs de `notification_server.py` para mensajes de error BLE
+### El LoPy no reenvía comandos BLE
+1. ✓ Verifica `ESP32_NFC_MAC` en `credentials.py` del LoPy4
+2. ✓ Revisa logs del LoPy4 para mensajes `BLE LED: ...`
+3. ✓ Asegura que el ESP32 está anunciando BLE (nombre por defecto: "ESP32-NFC-Door")
 
 ---
 
@@ -257,14 +224,16 @@ Sensores (3 nodos LoPy4)
 TTN
     ↓ webhook
 notification_server.py
-    ├─→ Orion (FIWARE)
-    ├─→ TTN downlink (LoRaWAN → LoPy4)
-    └─→ LEDStateManager
-         ├─→ Agrega alertas por nodo
-         ├─→ Agrega alertas por tipo
-         └─→ BLE Client
-              ↓
-           ESP32
+   ├─→ Orion (FIWARE)
+   ├─→ TTN downlink (LoRaWAN → LoPy4 dormitorio)
+   └─→ LEDStateManager
+      ├─→ Agrega alertas por nodo
+      ├─→ Agrega alertas por tipo
+      └─→ Downlink LED (cmd 0x09)
+          ↓
+        LoPy4 (dormitorio)
+          ↓ BLE
+        ESP32
               ├─→ Indicadores 1-3: Estado de nodos
               ├─→ Indicadores 4-5: Alertas agregadas (temp, humedad)
               └─→ Indicador 6: Acceso NFC
@@ -300,14 +269,15 @@ Indicador 5 (Humedad): 🔵 AZUL      (OK en todos)
 
 1. s1 mide 32°C → uplink LoRaWAN → TTN → webhook
 2. `notification_server.py` recibe uplink
-3. `r_temp_alta()` detecta t > 28
+3. `r_temp()` detecta t > 28
 4. `_led_manager.add_alert("Sensor:s1", "temp")`
 5. `LEDStateManager` recalcula estado:
-   - `node_alerts["Sensor:s1"]` = {"temp"}
-   - `type_alerts["temp"]` = {"Sensor:s1", "Sensor:s3"}
-6. Envía comandos BLE automáticamente:
-   - Indicador 1 → Rojo (nodo s1 tiene alertas)
-   - Indicador 4 → Amarillo (2 nodos con temp)
+  - `node_alerts["Sensor:s1"]` = {"temp"}
+  - `type_alerts["temp"]` = {"Sensor:s1", "Sensor:s3"}
+6. Envía downlinks LoRaWAN al LoPy4 (cmd 0x09):
+  - Indicador 1 → Rojo (nodo s1 tiene alertas)
+  - Indicador 4 → Amarillo (2 nodos con temp)
+7. El LoPy reenvía por BLE los comandos al ESP32
 
 ---
 
