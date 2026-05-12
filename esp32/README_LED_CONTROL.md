@@ -1,31 +1,29 @@
-# Control de LEDs simples vía BLE — ESP32 NFC-BLE Broadcaster (8 indicadores con LEDs simples)
+# Control de LEDs simples vía BLE — ESP32 NFC-BLE Broadcaster (6 indicadores)
 
 ## Descripción General
 
-El ESP32 controla **8 indicadores de estado**, cada uno compuesto por **2 LEDs simples** (rojo y verde):
+El ESP32 controla **6 indicadores de estado**, cada uno compuesto por **2 LEDs simples**:
 - **Indicadores 1-3**: Estado de cada nodo (verde=OK, rojo=alerta)
-- **Indicadores 4-6**: Alertas por tipo agregadas (temperatura, humedad y reservado)
-- **Indicador 7**: Estado general del sistema
-- **Indicador 8**: Acceso NFC (verde=autorizado, rojo=denegado, apagado=sin actividad)
+- **Indicadores 4-5**: Alertas por tipo agregadas (temperatura y humedad)
+- **Indicador 6**: Acceso NFC (verde=autorizado, rojo=denegado, apagado=sin actividad)
 
 Los LEDs se actualizan automáticamente con lógica inteligente de agregación.
 
-### Mapeo de Indicadores (8 totales, 16 LEDs)
+### Mapeo de Indicadores (6 totales, 12 LEDs)
 
-| Indicador | GPIO alerta | Color alerta | GPIO normal | Color normal | Propósito |
-|-----------|-------------|--------------|-------------|--------------|-----------|
+| Indicador | GPIO alerta (A) | Color alerta | GPIO normal (B) | Color normal | Propósito |
+|-----------|-----------------|--------------|-----------------|--------------|-----------|
 | **1** | 25 | 🔴 Rojo | 26 | 🟢 Verde | **Nodo s1 (Salón)** |
 | **2** | 12 | 🔴 Rojo | 13 | 🟢 Verde | **Nodo s2 (Dormitorio)** |
-| **3** | 15 | 🔴 Rojo | 2 | 🟢 Verde | **Nodo s3 (Exterior)** |
-| **4** | 5 | 🟠 Naranja | 18 | 🔵 Azul | **Temperatura (agregado)** |
-| **5** | 19 | 🟠 Naranja | 23 | 🔵 Azul | **Reservado** |
-| **6** | 4 | 🟠 Naranja | 16 | 🔵 Azul | **Humedad (agregado)** |
-| **7** | 17 | 🔴 Rojo | 27 | 🟢 Verde | **Sistema general** |
-| **8** | 33 | 🔴 Rojo | 14 | 🟢 Verde | **Acceso NFC** |
+| **3** | 14 | 🔴 Rojo | 27 | 🟢 Verde | **Nodo s3 (Exterior)** |
+| **4** | 15 | 🟠 Naranja | 2 | 🔵 Azul | **Temperatura (agregado)** |
+| **5** | 4 | 🟠 Naranja | 16 | 🔵 Azul | **Humedad (agregado)** |
+| **6** | 18 | 🔴 Rojo | 19 | 🟢 Verde | **Acceso NFC** |
 
 **Lógica de colores:**
-- Indicadores 1-3 y 7-8 (nodos, sistema, NFC): **Rojo** = alerta / **Verde** = OK / Ambos = crítico
-- Indicadores 4-6 (sensores): **Naranja** = alerta / **Azul** = normal / Ambos = crítico (2+ nodos afectados)
+- Indicadores 1-3 (nodos): **Rojo** = alerta / **Verde** = OK
+- Indicadores 4-5 (sensores): **Naranja** = alerta 1 nodo / **Ambos** = crítico (2+ nodos) / **Azul** = OK
+- Indicador 6 (NFC): **Verde** = autorizado (auto-apaga en 1.5 s) / **Rojo** = denegado (auto-apaga en 2 s) / **Ambos** = esperando servidor / **Apagado** = sin actividad
 
 ---
 
@@ -52,19 +50,18 @@ Si s2 está normal:               Indicador 2 = Verde
 Si s3 tiene otra alerta:         Indicador 3 = Rojo
 ```
 
-### Indicadores 4-6 — Alertas por Tipo (Agregadas de todos los nodos)
+### Indicadores 4-5 — Alertas por Tipo (Agregadas de todos los nodos)
 
 Cada indicador muestra si hay ese tipo de alerta en algún nodo:
 
 ```
 Indicador 4: Temperatura (temp alta o baja en cualquier nodo)
-Indicador 5: Reservado (sin uso)
-Indicador 6: Humedad (humedad alta en cualquier nodo)
+Indicador 5: Humedad (humedad alta en cualquier nodo)
 ```
 
 **Estados:**
-- 🟢 **Verde** — OK en todos los nodos (solo LED verde encendido)
-- 🔴 **Rojo** — Alerta en 1 nodo (solo LED rojo encendido)
+- 🔵 **Azul** — OK en todos los nodos (solo LED normal encendido)
+- 🟠 **Naranja** — Alerta en 1 nodo (solo LED alerta encendido)
 - 🟡 **Amarillo** — Alerta en 2+ nodos (ambos LEDs encendidos = crítico)
 
 **Ejemplo:**
@@ -72,43 +69,25 @@ Indicador 6: Humedad (humedad alta en cualquier nodo)
 Si s1 tiene temp alta y s2 tiene temp baja:
   Indicador 4 = Amarillo (crítico: 2 nodos con alerta de temperatura)
 
-Si el indicador 5 está reservado:
-    Indicador 5 = Apagado
-
 Si todos OK:
-    Indicador 5 = Verde
+  Indicador 5 = Azul
 ```
 
-### Indicador 7 — Sistema General
+### Indicador 6 — Acceso NFC
 
-Estado crítico del sistema:
-
-**Estados:**
-- 🟢 **Verde** — Todo OK (solo LED verde)
-- 🟡 **Amarillo** — Hay alertas (warning: ambos LEDs)
-- 🔴 **Rojo** — Crítico (solo LED rojo)
-
-**Ejemplo:**
-```
-Sistema normal:              Indicador 7 = Verde
-Hay varios warnings:         Indicador 7 = Amarillo
-Estado crítico:              Indicador 7 = Rojo
-```
-
-### Indicador 8 — Acceso NFC
-
-Muestra el resultado del último intento de acceso con tarjeta NFC:
+Muestra el resultado del último intento de acceso con tarjeta NFC. Se apaga automáticamente tras un breve tiempo.
 
 **Estados:**
 - ⚫ **Apagado** — Sin actividad NFC reciente
-- 🟢 **Verde** — Último acceso autorizado
-- 🔴 **Rojo** — Último acceso denegado
+- 🟡 **Amarillo** — Tarjeta leída, esperando respuesta del servidor
+- 🟢 **Verde** — Último acceso autorizado (auto-apaga en 1.5 s)
+- 🔴 **Rojo** — Último acceso denegado (auto-apaga en 2 s)
 
 **Ejemplo:**
 ```
-Sin tarjetas leídas:         Indicador 8 = Apagado
-Tarjeta autorizada:          Indicador 8 = Verde
-Tarjeta no reconocida:       Indicador 8 = Rojo
+Sin tarjetas leídas:         Indicador 6 = Apagado
+Tarjeta autorizada:          Indicador 6 = Verde → Apagado (1.5 s)
+Tarjeta no reconocida:       Indicador 6 = Rojo  → Apagado (2 s)
 ```
 
 ---
@@ -122,20 +101,23 @@ Tarjeta no reconocida:       Indicador 8 = Rojo
 - **UUID**: `b1d2e3f4-5a6b-7c8d-9e0f-a1b2c3d4e5f6`
 - **Tipo**: Write
 - **Formato**: 3 bytes: `[led_id][red_on][green_on]`
+  - `led_id`: 1-6 (qué indicador)
+  - `red_on`: 0 o 1 (encender LED alerta: rojo o naranja según indicador)
+  - `green_on`: 0 o 1 (encender LED normal: verde o azul según indicador)
 
 ### Ejemplo de Comandos
 
 ```
-Indicador 1 (s1) rojo:              [0x01, 0x01, 0x00]
-Indicador 2 (s2) verde:             [0x02, 0x00, 0x01]
-Indicador 3 (s3) amarillo:          [0x03, 0x01, 0x01]
-Indicador 4 (Temp) rojo:            [0x04, 0x01, 0x00]
-Indicador 5 (Reservado) apagado:    [0x05, 0x00, 0x00]
-Indicador 6 (Humedad) amarillo:     [0x06, 0x01, 0x01]
-Indicador 7 (Sistema) apagado:      [0x07, 0x00, 0x00]
-Indicador 8 (NFC) acceso autorizado:[0x08, 0x00, 0x01]
-Indicador 8 (NFC) acceso denegado:  [0x08, 0x01, 0x00]
-Indicador 8 (NFC) sin actividad:    [0x08, 0x00, 0x00]
+Indicador 1 (s1) rojo:                [0x01, 0x01, 0x00]
+Indicador 2 (s2) verde:               [0x02, 0x00, 0x01]
+Indicador 3 (s3) amarillo (crítico):  [0x03, 0x01, 0x01]
+Indicador 4 (Temp) naranja:           [0x04, 0x01, 0x00]
+Indicador 4 (Temp) amarillo:          [0x04, 0x01, 0x01]
+Indicador 5 (Humedad) azul:           [0x05, 0x00, 0x01]
+Indicador 6 (NFC) autorizado:         [0x06, 0x00, 0x01]
+Indicador 6 (NFC) denegado:           [0x06, 0x01, 0x00]
+Indicador 6 (NFC) esperando:          [0x06, 0x01, 0x01]
+Indicador 6 (NFC) sin actividad:      [0x06, 0x00, 0x00]
 ```
 
 Los comandos se envían automáticamente desde `notification_server.py` mediante la clase `LEDStateManager`, que calcula el estado correcto de cada indicador según las alertas activas.
@@ -155,20 +137,18 @@ PN532 RST → GPIO 32
 
 ### LEDs Simples (on/off, 5mm)
 Cada indicador necesita:
-- 1 LED rojo (ánodo → GPIO, cátodo → GND con resistencia)
-- 1 LED verde (ánodo → GPIO, cátodo → GND con resistencia)
+- 1 LED alerta (rojo o naranja): ánodo → GPIO, cátodo → GND con resistencia
+- 1 LED normal (verde o azul): ánodo → GPIO, cátodo → GND con resistencia
 - Resistencia por LED: ~220Ω (para ~20mA a 2V)
 
-**Pines usados (16 total, 2 por indicador):**
+**Pines usados (12 total, 2 por indicador):**
 ```
 Indicador 1 (s1):         GPIO 25 (ROJO),    GPIO 26 (VERDE)
 Indicador 2 (s2):         GPIO 12 (ROJO),    GPIO 13 (VERDE)
-Indicador 3 (s3):         GPIO 15 (ROJO),    GPIO 2  (VERDE)
-Indicador 4 (Temp):       GPIO 5  (NARANJA), GPIO 18 (AZUL)
-Indicador 5 (Reservado):  GPIO 19 (NARANJA), GPIO 23 (AZUL)
-Indicador 6 (Humedad):    GPIO 4  (NARANJA), GPIO 16 (AZUL)
-Indicador 7 (Sistema):    GPIO 17 (ROJO),    GPIO 27 (VERDE)
-Indicador 8 (Acceso NFC): GPIO 33 (ROJO),    GPIO 14 (VERDE)
+Indicador 3 (s3):         GPIO 14 (ROJO),    GPIO 27 (VERDE)
+Indicador 4 (Temp):       GPIO 15 (NARANJA), GPIO 2  (AZUL)
+Indicador 5 (Humedad):    GPIO 4  (NARANJA), GPIO 16 (AZUL)
+Indicador 6 (Acceso NFC): GPIO 18 (ROJO),    GPIO 19 (VERDE)
 ```
 
 **Reservados (no disponibles):**
@@ -224,7 +204,7 @@ BLEDevice::init("ESP32-NFC-Door");  // ← Cambiar aquí
 
 Y en `notification_server.py`:
 ```python
-_ble_client = BLELEDClient(device_name="ESP32-NFC-Door")  # ← Cambiar aquí
+_ble_client = BLELEDClient(device_name="ESP32-NFC-Door")  // ← Cambiar aquí
 ```
 
 ### Logs
@@ -278,17 +258,16 @@ TTN
     ↓ webhook
 notification_server.py
     ├─→ Orion (FIWARE)
-    ├─→ TTN downlink (LoRaWAN)
+    ├─→ TTN downlink (LoRaWAN → LoPy4)
     └─→ LEDStateManager
          ├─→ Agrega alertas por nodo
          ├─→ Agrega alertas por tipo
-         ├─→ Calcula estado crítico
          └─→ BLE Client
               ↓
            ESP32
               ├─→ Indicadores 1-3: Estado de nodos
-              ├─→ Indicadores 4-6: Alertas agregadas
-              └─→ Indicador 7: Sistema general
+              ├─→ Indicadores 4-5: Alertas agregadas (temp, humedad)
+              └─→ Indicador 6: Acceso NFC
 ```
 
 ---
@@ -297,9 +276,9 @@ notification_server.py
 
 ### Escenario:
 ```
-s1 (Salón):     32°C → Temperatura alta ⚠️
+s1 (Salón):      32°C → Temperatura alta ⚠️
 s2 (Dormitorio): 21°C → OK ✓
-s3 (Exterior):   5°C → Temperatura baja ⚠️
+s3 (Exterior):    5°C → Temperatura baja ⚠️
 ```
 
 ### Resultado de LEDs:
@@ -313,14 +292,8 @@ Indicador 3 (s3):  🔴 ROJO     (hay alerta de temperatura baja)
 
 **Indicadores de Alertas Tipo:**
 ```
-Indicador 4 (Temp):    🟡 AMARILLO  (2+ nodos con alerta de temperatura)
-Indicador 5 (Reservado): ⚫ APAGADO  (sin uso)
-Indicador 6 (Humedad): 🟢 VERDE     (OK en todos)
-```
-
-**Indicador Sistema:**
-```
-Indicador 7:  🟡 AMARILLO  (hay warnings activos)
+Indicador 4 (Temp):    🟡 AMARILLO  (2 nodos con alerta de temperatura)
+Indicador 5 (Humedad): 🔵 AZUL      (OK en todos)
 ```
 
 ### Proceso Detallado:
@@ -329,26 +302,23 @@ Indicador 7:  🟡 AMARILLO  (hay warnings activos)
 2. `notification_server.py` recibe uplink
 3. `r_temp_alta()` detecta t > 28
 4. `_led_manager.add_alert("Sensor:s1", "temp")`
-5. LEDStateManager recalcula estado:
+5. `LEDStateManager` recalcula estado:
    - `node_alerts["Sensor:s1"]` = {"temp"}
    - `type_alerts["temp"]` = {"Sensor:s1", "Sensor:s3"}
 6. Envía comandos BLE automáticamente:
    - Indicador 1 → Rojo (nodo s1 tiene alertas)
    - Indicador 4 → Amarillo (2 nodos con temp)
-7. Usuario ve:
-   - Alerta en webapp (FIWARE Orion)
-   - LEDs rojos/amarillos en hardware mostrando qué está mal
-   - Puede identificar rápidamente s1 y s3 tienen problemas de temperatura
 
 ---
 
 ## Mantenimiento
 
 ### Inicializar LEDs al arrancar
-Los LEDs se inicializan en **verde** en `setup()`:
+Los LEDs se inicializan en `setup()`: indicadores 1-5 en **normal (verde/azul)**, indicador 6 (NFC) **apagado**:
 ```cpp
-for (int i = 0; i < 7; i++) {
-    _setLEDState(i, false, true);  // Verde (OK)
+for (int i = 0; i < 6; i++) {
+    bool initNormal = (i < 5);  // Indicador 6 (NFC) arranca apagado
+    _setLEDState(i, false, initNormal);
 }
 ```
 
@@ -376,6 +346,32 @@ async def test():
 
 asyncio.run(test())
 "
+```
+
+### Simular alertas sin hardware real
+
+Llama al endpoint `/iot/ul` con payloads TTN falsos para disparar el pipeline completo (reglas, downlinks TTN, comandos BLE):
+
+```bash
+# Temperatura alta en Salón → Indicador 1 rojo + Indicador 4 naranja
+curl -X POST http://localhost:5000/iot/ul \
+  -H "Content-Type: application/json" \
+  -d '{"end_device_ids": {"device_id": "lopy4-salon"}, "uplink_message": {"decoded_payload": {"temperature": 35, "humidity": 50}}}'
+
+# Temperatura alta también en Dormitorio → Indicador 4 amarillo (crítico)
+curl -X POST http://localhost:5000/iot/ul \
+  -H "Content-Type: application/json" \
+  -d '{"end_device_ids": {"device_id": "lopy4-dormitorio"}, "uplink_message": {"decoded_payload": {"temperature": 35, "humidity": 50}}}'
+
+# Humedad alta en Exterior → Indicador 3 rojo + Indicador 5 naranja
+curl -X POST http://localhost:5000/iot/ul \
+  -H "Content-Type: application/json" \
+  -d '{"end_device_ids": {"device_id": "lopy4-exterior"}, "uplink_message": {"decoded_payload": {"temperature": 20, "humidity": 90}}}'
+
+# Volver a estado normal en Salón
+curl -X POST http://localhost:5000/iot/ul \
+  -H "Content-Type: application/json" \
+  -d '{"end_device_ids": {"device_id": "lopy4-salon"}, "uplink_message": {"decoded_payload": {"temperature": 20, "humidity": 50}}}'
 ```
 
 ---
