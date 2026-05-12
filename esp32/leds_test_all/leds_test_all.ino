@@ -7,14 +7,12 @@ struct IndicatorPins {
 };
 
 const IndicatorPins indicators[] = {
-  {25, 26, "Indicador 1 - Nodo s1 (Salon)"},
-  {12, 13, "Indicador 2 - Nodo s2 (Dormitorio)"},
-  {15, 2,  "Indicador 3 - Nodo s3 (Exterior)"},
-  {5, 18,  "Indicador 4 - Temperatura"},
-  {19, 23, "Indicador 5 - Presion"},
-  {4, 16,  "Indicador 6 - Humedad"},
-  {17, 27, "Indicador 7 - Sistema"},
-  {33, 14, "Indicador 8 - Acceso NFC"}
+  {25, 26, "Indicador 1 - Salon       [NODO]"},
+  {12, 13, "Indicador 2 - Dormitorio  [NODO]"},
+  {14, 27, "Indicador 3 - Exterior    [NODO]"},
+  {15,  2, "Indicador 4 - Temperatura [SENSOR]"},
+  { 4, 16, "Indicador 5 - Humedad     [SENSOR]"},
+  {18, 19, "Indicador 6 - Acceso NFC  [SISTEMA]"},
 };
 
 const size_t indicatorCount = sizeof(indicators) / sizeof(indicators[0]);

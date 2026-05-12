@@ -237,9 +237,9 @@ def _send_led(led_id, red_on, green_on):
     if not BLEAK_AVAILABLE or not _ble_client:
         return False
 
-    # Validar que led_id esté en rango [1,7]
-    if led_id < 1 or led_id > 7:
-        logging.error(f"[BLE] Indicador {led_id} inválido (debe ser 1-7)")
+    # Validar que led_id esté en rango [1,6]
+    if led_id < 1 or led_id > 6:
+        logging.error(f"[BLE] Indicador {led_id} inválido (debe ser 1-6)")
         return False
 
     # Intentar enviar directamente
@@ -349,35 +349,22 @@ class LEDStateManager:
             else:
                 updates.append((i, False, True))  # Verde (OK)
 
-        # Indicadores 4-6: Alertas por tipo
+        # Indicadores 4-5: Alertas por tipo sensor
         alert_leds = {
-            "temp": 4,
-            "humidity": 6
+            "temp":     4,
+            "humidity": 5,
         }
         for alert_type, led_id in alert_leds.items():
             if self.type_alerts[alert_type]:
                 count = len(self.type_alerts[alert_type])
                 if count >= 2:
-                    updates.append((led_id, True, True))  # Amarillo (crítico, ambos encendidos)
+                    updates.append((led_id, True, True))   # Amarillo (crítico)
                 else:
-                    updates.append((led_id, True, False))  # Rojo (alerta)
+                    updates.append((led_id, True, False))  # Naranja/Rojo (alerta)
             else:
-                updates.append((led_id, False, True))  # Verde (OK)
+                updates.append((led_id, False, True))      # Azul/Verde (OK)
 
-        # Indicador 5 queda reservado sin uso funcional.
-        updates.append((5, False, False))
-
-        # Indicador 7: Sistema general
-        all_alerts = set()
-        for alerts in self.node_alerts.values():
-            all_alerts.update(alerts)
-
-        if "nfc_denied" in all_alerts or "vibration" in all_alerts:
-            updates.append((7, True, False))  # Rojo (crítico)
-        elif all_alerts:
-            updates.append((7, True, True))  # Amarillo (warning, ambos encendidos)
-        else:
-            updates.append((7, False, True))  # Verde (OK)
+        # Indicador 6 (NFC) se controla desde r_nfc() vía downlink; no se toca aquí.
 
         return updates
 

@@ -39,15 +39,19 @@
 //   PN532 RST → GPIO 32  (opcional, recomendado)
 //   PN532 DIP: SW1=OFF, SW2=ON  (modo I²C)
 //
-// Pines LED simples (2 pines por indicador: rojo y verde):
-//   Indicador 1 (Nodo s1):     R=GPIO 25, G=GPIO 26
-//   Indicador 2 (Nodo s2):     R=GPIO 12, G=GPIO 13
-//   Indicador 3 (Nodo s3):     R=GPIO 15, G=GPIO 2
-//   Indicador 4 (Temperatura): R=GPIO 5,  G=GPIO 18
-//   Indicador 5 (Reservado):   R=GPIO 19, G=GPIO 23
-//   Indicador 6 (Humedad):     R=GPIO 4,  G=GPIO 16
-//   Indicador 7 (Sistema):     R=GPIO 17, G=GPIO 27
-//   Indicador 8 (Acceso NFC):  R=GPIO 33, G=GPIO 14
+// Pines LED simples — agrupados por tipo, cada par en pines adyacentes del ESP32:
+//
+//   NODOS (columna derecha del ESP32 — bloque D13,D12,D14,D27,D26,D25):
+//   Indicador 1 (Salón):       R=GPIO 25, G=GPIO 26
+//   Indicador 2 (Dormitorio):  R=GPIO 12, G=GPIO 13
+//   Indicador 3 (Exterior):    R=GPIO 14, G=GPIO 27
+//
+//   SENSORES (columna izquierda, posiciones 1-4: D15,D2,D4,D16):
+//   Indicador 4 (Temperatura): N=GPIO 15, A=GPIO 2
+//   Indicador 5 (Humedad):     N=GPIO 4,  A=GPIO 16
+//
+//   SISTEMA (columna izquierda, posiciones 7-8: D18,D19):
+//   Indicador 6 (Acceso NFC):  R=GPIO 18, G=GPIO 19
 // ============================================================
 
 #include <Wire.h>
@@ -82,23 +86,21 @@ struct LEDPins {
     uint8_t pin_a, pin_b;
 };
 
-const LEDPins ledPins[8] = {
-    {25, 26},   // Indicador 1: Nodo s1 (Salón)       R/V
-    {12, 13},   // Indicador 2: Nodo s2 (Dormitorio)  R/V
-    {15, 2},    // Indicador 3: Nodo s3 (Exterior)    R/V
-    {5, 18},    // Indicador 4: Temperatura            N/A
-    {19, 23},   // Indicador 5: Reservado              N/A
-    {4, 16},    // Indicador 6: Humedad                N/A
-    {17, 27},   // Indicador 7: Sistema general        R/V
-    {33, 14}    // Indicador 8: Acceso NFC             R/V
+const LEDPins ledPins[6] = {
+    {25, 26},   // Indicador 1: Salón       R/V  — col. derecha
+    {12, 13},   // Indicador 2: Dormitorio  R/V  — col. derecha
+    {14, 27},   // Indicador 3: Exterior    R/V  — col. derecha
+    {15,  2},   // Indicador 4: Temperatura N/A  — col. izq. pos.1-2
+    { 4, 16},   // Indicador 5: Humedad     N/A  — col. izq. pos.3-4
+    {18, 19},   // Indicador 6: Acceso NFC  R/V  — col. izq. pos.7-8
 };
 
 // Nombres de color por indicador [pin_a, pin_b]
-static const char* COLOR_A[8] = {
-    "ROJO", "ROJO", "ROJO", "NARANJA", "NARANJA", "NARANJA", "ROJO", "ROJO"
+static const char* COLOR_A[6] = {
+    "ROJO", "ROJO", "ROJO", "NARANJA", "NARANJA", "ROJO"
 };
-static const char* COLOR_B[8] = {
-    "VERDE", "VERDE", "VERDE", "AZUL", "AZUL", "AZUL", "VERDE", "VERDE"
+static const char* COLOR_B[6] = {
+    "VERDE", "VERDE", "VERDE", "AZUL", "AZUL", "VERDE"
 };
 
 // ============================================================
@@ -109,19 +111,17 @@ struct LEDState {
     bool b;  // pin_b: normal (verde / azul según indicador)
 };
 
-LEDState ledStates[8] = {
-    {false, true},   // Indicador 1: normal (verde)
-    {false, true},   // Indicador 2: normal (verde)
-    {false, true},   // Indicador 3: normal (verde)
-    {false, true},   // Indicador 4: normal (azul)
-    {false, true},   // Indicador 5: normal (azul)
-    {false, true},   // Indicador 6: normal (azul)
-    {false, true},   // Indicador 7: normal (verde)
-    {false, false}   // Indicador 8: apagado (sin actividad NFC)
+LEDState ledStates[6] = {
+    {false, true},   // Indicador 1: Salón       — normal (verde)
+    {false, true},   // Indicador 2: Dormitorio  — normal (verde)
+    {false, true},   // Indicador 3: Exterior    — normal (verde)
+    {false, true},   // Indicador 4: Temperatura — normal (azul)
+    {false, true},   // Indicador 5: Humedad     — normal (azul)
+    {false, false}   // Indicador 6: NFC         — apagado (sin actividad)
 };
 
 static void _setLEDState(int ledIndex, bool a, bool b) {
-    if (ledIndex < 0 || ledIndex >= 8) return;
+    if (ledIndex < 0 || ledIndex >= 6) return;
 
     ledStates[ledIndex].a = a;
     ledStates[ledIndex].b = b;
@@ -158,11 +158,11 @@ class LEDCommandCallback : public BLECharacteristicCallbacks {
         uint8_t redOn = (uint8_t)value[1];
         uint8_t greenOn = (uint8_t)value[2];
 
-        // Validar que ledIndex esté en rango [0,6]
-        if (ledIndex >= 8) {
+        // Validar que ledIndex esté en rango [0,5]
+        if (ledIndex >= 6) {
             Serial.print("[LED] ERROR: Indicador ");
             Serial.print((uint8_t)value[0]);
-            Serial.println(" fuera de rango (debe ser 1-8)");
+            Serial.println(" fuera de rango (debe ser 1-6)");
             return;
         }
 
@@ -297,13 +297,13 @@ void setup() {
     Serial.println("\n=== ESP32 NFC-BLE Broadcaster + LED Control (simple) ===");
 
     // --- Init LEDs ---
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 6; i++) {
         pinMode(ledPins[i].pin_a, OUTPUT);
         pinMode(ledPins[i].pin_b, OUTPUT);
-        bool initNormal = (i < 7);  // Indicador 8 (NFC) arranca apagado
+        bool initNormal = (i < 5);  // Indicador 6 (NFC) arranca apagado
         _setLEDState(i, false, initNormal);
     }
-    Serial.println("[LED] 8 indicadores LED inicializados");
+    Serial.println("[LED] 6 indicadores LED inicializados");
 
     // --- Init PN532 ---
     pinMode(NFC_RST_PIN, OUTPUT);
