@@ -453,12 +453,11 @@ while True:
             ))
 
             sistema_transmitiendo()
-            s.setblocking(True)
-            s.settimeout(3.5)
 
             send_ok = False
             for retry in range(2):
                 try:
+                    s.setblocking(True)   # send sin timeout — espera duty cycle
                     s.send(payload)
                     print('  Uplink enviado')
                     send_ok = True
@@ -466,13 +465,14 @@ while True:
                 except Exception as e:
                     print('  Error enviando (intento {}/2): {}'.format(retry + 1, e))
                     if retry < 1:
-                        time.sleep(1)
+                        time.sleep(2)
 
             if not send_ok:
                 print('  Fallo envío después de retries')
                 sistema_conectado()
                 continue
 
+            s.settimeout(3.5)  # timeout solo para el recv (ventana RX1/RX2)
             try:
                 data = s.recv(64)
                 if data:
