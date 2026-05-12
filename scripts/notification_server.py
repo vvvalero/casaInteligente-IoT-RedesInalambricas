@@ -551,7 +551,9 @@ def _downlink_worker():
                     device, bytes_list = _downlink_queue.pop(0)
 
                 # Enviar downlink fuera del lock
-                url = f"{TTN_API_BASE}/as/applications/{TTN_APP_ID}/devices/{device}/down/replace"
+                # Use push so 0x08 (whitelist sync) is queued and not overwritten
+                # by later commands before the next uplink RX window.
+                url = f"{TTN_API_BASE}/as/applications/{TTN_APP_ID}/devices/{device}/down/push"
                 hdrs = {
                     "Authorization": f"Bearer {TTN_API_KEY}",
                     "Content-Type": "application/json"
@@ -566,7 +568,7 @@ def _downlink_worker():
                     if r.status_code == 429:
                         logging.warning(f"Downlink rate limited (429) para {device}, esperando 10s")
                         time.sleep(10)
-                    elif r.status_code not in (200, 204):
+                    elif r.status_code not in (200, 202, 204):
                         logging.error(f"Downlink {device} {bytes_list} → {r.status_code}: {r.text[:200]}")
                     else:
                         logging.info(f"Downlink {device} {bytes_list} → {r.status_code}")
