@@ -181,14 +181,20 @@ class BLEScanner:
             except TypeError:
                 return str(u).replace('-', '').lower()
 
-        for attempt in range(2):
+        _delays = [300, 800, 1500]
+        for attempt in range(3):
             ble_client = None
             try:
-                # Pequeña pausa para que el stack BLE se estabilice tras stop_scan
-                time.sleep_ms(200)
+                # stop_scan() antes de connect fuerza al stack BLE de Pycom a salir
+                # de cualquier estado scan residual (no-op si no hay scan activo)
+                try:
+                    self._bt.stop_scan()
+                except Exception:
+                    pass
+                time.sleep_ms(_delays[attempt])
+
                 ble_client = self._bt.connect(mac_bytes)
                 if not ble_client:
-                    print('[BLE-LED] No se pudo conectar a {}'.format(mac_objetivo))
                     raise Exception('connect returned None')
 
                 services = ble_client.services()
@@ -208,16 +214,13 @@ class BLEScanner:
                 if not target_char:
                     raise Exception('servicio/característica no encontrado')
 
-                comando = bytes([led_id, 1 if red_on else 0, 1 if green_on else 0])
-                target_char.write(comando)
+                target_char.write(bytes([led_id, 1 if red_on else 0, 1 if green_on else 0]))
                 print('[BLE-LED] LED {} R={} G={}'.format(
                     led_id, 1 if red_on else 0, 1 if green_on else 0))
                 return True
 
             except Exception as e:
-                print('[BLE-LED] Error (intento {}/2): {}'.format(attempt + 1, e))
-                if attempt == 0:
-                    time.sleep_ms(600)
+                print('[BLE-LED] Error (intento {}/3): {}'.format(attempt + 1, e))
             finally:
                 if ble_client:
                     try:

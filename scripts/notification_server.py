@@ -857,11 +857,13 @@ def r_nfc(d, sid):
 
     if authorized:
         _alerta("nfc_denied", False, "", "info", sid)
-        _downlink(sid, [0x03])
+        # replace=True: vacía la cola TTN para que la confirmación llegue en el
+        # siguiente uplink, sin esperar a que se drenen downlinks anteriores.
+        _downlink(sid, [0x03], replace=True)
         _led_manager.remove_alert(sid, "nfc_denied")
     else:
         _alerta("nfc_denied", True, f"Acceso denegado {log_display}", "critical", sid)
-        _downlink(sid, [0x04])
+        _downlink(sid, [0x04], replace=True)
         _led_manager.add_alert(sid, "nfc_denied")
 
 
