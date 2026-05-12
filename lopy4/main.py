@@ -139,7 +139,11 @@ def _procesar_nfc(uids):
             _tx_ahora    = True
             if _ble and ESP32_NFC_MAC:
                 _ble.enviar_comando_led(ESP32_NFC_MAC, 6, 1, 1)  # ámbar: verificando
-        # else: mismo UID, estado ya conocido → no tocar el LED
+        elif _nfc_state == _NFC_PENDING:
+            # Mismo UID, todavía esperando respuesta del servidor.
+            # TTN entrega el downlink solo cuando el LoPy4 hace TX, así que seguimos
+            # pidiendo uplinks hasta que llegue el 0x03/0x04.
+            _tx_ahora = True
 
 
 if NODE_TYPE not in ('salon', 'dormitorio', 'exterior'):
