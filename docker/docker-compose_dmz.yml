@@ -161,6 +161,7 @@ services:
       - ../.env
     environment:
       - ORION_URL=http://orion:1026
+      - BLE_DISABLED=1
     depends_on:
       orion:
         condition: service_healthy

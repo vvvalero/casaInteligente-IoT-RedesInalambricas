@@ -235,8 +235,12 @@ class BLELEDClient:
 _ble_client = None
 
 def _init_ble_client():
-    """Inicializa el cliente BLE en un thread"""
+    """Inicializa el cliente BLE en un thread.
+    Se puede deshabilitar con BLE_DISABLED=1 (útil en DMZ/Docker sin hardware BLE)."""
     global _ble_client
+    if os.environ.get("BLE_DISABLED", "").strip() == "1":
+        logging.info("[BLE] Deshabilitado por BLE_DISABLED=1")
+        return
     if not BLEAK_AVAILABLE:
         logging.warning("[BLE] bleak no disponible, LEDs desactivados")
         return

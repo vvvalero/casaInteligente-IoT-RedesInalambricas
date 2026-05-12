@@ -24,4 +24,4 @@ ENV SENSOR_S1_DEVICE=lopy4-salon
 ENV SENSOR_S2_DEVICE=lopy4-dormitorio
 ENV SENSOR_S3_DEVICE=lopy4-exterior
 
-CMD ["gunicorn", "-w", "8", "-b", "0.0.0.0:5000", "--timeout", "30", "--keep-alive", "5", "notification_server:app"]
+CMD ["gunicorn", "-w", "1", "-k", "gthread", "--threads", "8", "-b", "0.0.0.0:5000", "--timeout", "30", "--keep-alive", "5", "notification_server:app"]
