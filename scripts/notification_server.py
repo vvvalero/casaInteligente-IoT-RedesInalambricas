@@ -1050,13 +1050,17 @@ def api_get_uids():
 @app.route("/api/nfc/uids", methods=["POST"])
 def api_add_uid():
     data = request.get_json(silent=True) or {}
+    logging.info(f"api_add_uid received data: {data}, raw_data: {request.data}")
     nombre = str(data.get("nombre", "")).strip()
     uid_raw = str(data.get("uid", "")).strip()
+    logging.info(f"Parsed: nombre='{nombre}', uid_raw='{uid_raw}'")
 
     if not nombre or nombre == "[object Object]":
+        logging.warning(f"Invalid nombre: '{nombre}'")
         return jsonify({"error": "Nombre de tarjeta requerido y válido"}), 400
 
     if not uid_raw:
+        logging.warning(f"Empty uid_raw: '{uid_raw}'")
         return jsonify({"error": "UID de tarjeta requerido"}), 400
 
     normalized_uid = _normalize_uid(uid_raw)
