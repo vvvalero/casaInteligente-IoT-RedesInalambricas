@@ -28,6 +28,8 @@
 #     0x07 = alerta exterior       (LED blanco)
 #     0x08 = sync whitelist NFC    (byte 1=count, luego 2 bytes por UID)
 #     0x09 = comando LED ESP32     (bytes 1=led_id 2=red_on 3=green_on)
+#     0x0A = batch LEDs ESP32      (bytes 1-5: estado indicadores 1-5)
+#            cada byte: (red_on<<1)|green_on  →  0=apagado 1=verde 2=rojo 3=amarillo
 # ============================================================
 
 import socket
@@ -378,6 +380,14 @@ def _procesar_downlink(data):
                 print('  BLE LED: error enviando a ESP32')
         else:
             print('  BLE LED: ESP32 no disponible en este nodo')
+    elif cmd == 0x0A and len(data) >= 6:
+        if NODE_TYPE == 'dormitorio' and _ble and ESP32_NFC_MAC:
+            states = [(i, (data[i] >> 1) & 1, data[i] & 1) for i in range(1, 6)]
+            ok = _ble.enviar_batch_leds(ESP32_NFC_MAC, states)
+            if not ok:
+                print('  BLE LED batch: error enviando a ESP32')
+        else:
+            print('  BLE LED batch: ESP32 no disponible en este nodo')
     else:
         print('  Downlink desconocido: 0x{:02X}'.format(cmd))
 

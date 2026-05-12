@@ -111,15 +111,6 @@ class BLELEDClient:
             await self.client.connect()
             self.connected = True
             logging.info(f"[BLE] Conectado a {self.device_name}")
-
-            # Enviar comandos pendientes de la cola
-            try:
-                await asyncio.sleep(0.5)
-                loop = asyncio.get_event_loop()
-                loop.call_soon_threadsafe(_flush_led_queue)
-            except:
-                pass
-
             return True
         except Exception as e:
             logging.error(f"[BLE] Error conectando: {e}")
@@ -252,50 +243,18 @@ def _init_ble_client():
     except Exception as e:
         logging.error(f"[BLE] Error inicializando: {e}")
 
-_led_command_queue = []
-_led_queue_lock = threading.Lock()
-_LED_QUEUE_MAX_SIZE = 50  # Límite para evitar OOM
-
-def _send_led(led_id, red_on, green_on):
-    """Envía comando de LED al LoPy4 dormitorio por LoRaWAN.
-    El LoPy reenvía el comando por BLE al ESP32."""
-    # Validar que led_id esté en rango [1,6]
-    if led_id < 1 or led_id > 6:
-        logging.error(f"[LORA] Indicador {led_id} inválido (debe ser 1-6)")
-        return False
-
-    payload = [0x09, led_id, 1 if red_on else 0, 1 if green_on else 0]
-    _downlink("Sensor:s2", payload)
-    logging.info(f"[LORA] Indicador {led_id} → R={1 if red_on else 0} G={1 if green_on else 0}")
-    return True
-
-def _flush_led_queue():
-    """Envía todos los comandos pendientes de la cola"""
-    global _led_command_queue
-
-    if not _ble_client or not _ble_client.connected:
-        return 0
-
-    with _led_queue_lock:
-        if not _led_command_queue:
-            return 0
-
-        queue_copy = _led_command_queue.copy()
-        _led_command_queue.clear()
-
-    sent = 0
-    for led_id, red_on, green_on in queue_copy:
-        if _ble_client.send_led(led_id, red_on, green_on):
-            sent += 1
-        else:
-            with _led_queue_lock:
-                _led_command_queue.append((led_id, red_on, green_on))
-
-    if sent > 0:
-        logging.info(f"[BLE] {sent} comandos enviados desde cola")
-
-    return sent
-
+def _send_all_leds(updates):
+    """Envía el estado de los 5 indicadores (1-5) en un único downlink 0x0A.
+    Formato: [0x0A, s1, s2, s3, s4, s5]
+    Cada byte: bits (red_on<<1) | green_on  →  0=apagado 1=verde 2=rojo 3=amarillo"""
+    state = [0] * 5
+    labels = {0: "apagado", 1: "verde/azul", 2: "rojo/naranja", 3: "amarillo"}
+    for led_id, red_on, green_on in updates:
+        if 1 <= led_id <= 5:
+            state[led_id - 1] = (1 if red_on else 0) << 1 | (1 if green_on else 0)
+    _downlink("Sensor:s2", [0x0A] + state)
+    logging.info("[LORA] LEDs batch → " + " ".join(
+        f"I{i+1}:{labels.get(s, s)}" for i, s in enumerate(state)))
 
 # ============================================================
 # GESTOR DE ESTADO GLOBAL DE LEDs
@@ -324,9 +283,7 @@ class LEDStateManager:
                 self.type_alerts[alert_type].add(sensor_id)
             led_updates = self._calculate_led_colors()
 
-        # Enviar LEDs sin tener el lock (evita bloqueo de I/O dentro del lock)
-        for led_id, red_on, green_on in led_updates:
-            _send_led(led_id, red_on, green_on)
+        _send_all_leds(led_updates)
 
     def remove_alert(self, sensor_id, alert_type):
         """Elimina alerta para un nodo/tipo"""
@@ -337,9 +294,7 @@ class LEDStateManager:
                 self.type_alerts[alert_type].discard(sensor_id)
             led_updates = self._calculate_led_colors()
 
-        # Enviar LEDs sin tener el lock (evita bloqueo de I/O dentro del lock)
-        for led_id, red_on, green_on in led_updates:
-            _send_led(led_id, red_on, green_on)
+        _send_all_leds(led_updates)
 
     def _calculate_led_colors(self):
         """Calcula qué LEDs deben estar on/off según estado actual.
