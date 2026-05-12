@@ -835,10 +835,12 @@ def r_nfc(d, sid):
     if authorized:
         _alerta("nfc_denied", False, "", "info", sid)
         _downlink(sid, [0x03])
+        _send_led(6, False, True)
         _led_manager.remove_alert(sid, "nfc_denied")
     else:
         _alerta("nfc_denied", True, f"Acceso denegado {log_display}", "critical", sid)
         _downlink(sid, [0x04])
+        _send_led(6, True, False)
         _led_manager.add_alert(sid, "nfc_denied")
 
 
