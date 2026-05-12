@@ -774,22 +774,27 @@ def r_vibracion(d, sid):
 
 
 def r_nfc(d, sid):
-    nfc_detected = d.get("nfcDetected", False)
-    uid_partial = int(round(d.get("nfcUidPartial", 0) * 100)) if nfc_detected else 0
+    # El UID se codifica como analogInput en el dormitorio (CH4).
+    # TTN puede usar distintos nombres según el formateador; se prueban en orden de preferencia.
+    analog_val = (d.get("nfcUidPartial")   # formatter semántico personalizado
+               or d.get("analogInput_4")   # CayenneLPP con número de canal
+               or d.get("analog_in_4")     # CayenneLPP TTN v3
+               or d.get("analogInput")     # CayenneLPP sin canal
+               or d.get("analog_in"))      # CayenneLPP TTN v3 sin canal
+
+    if analog_val is None:
+        logging.debug(f"[NFC] Sin campo analogInput en {sid} — posibles claves: {list(d.keys())}")
+        return
+
+    # El valor llega como float (e.g. -56.06); recuperar los 16 bits originales
+    uid_partial = int(round(float(analog_val) * 100))
     uid = f"{uid_partial & 0xFFFF:04X}"
 
-    # Log detallado de NFC para debugging
-    if nfc_detected:
-        logging.info(f"[NFC] TARJETA DETECTADA: UID={uid} en {sid}")
-    else:
-        logging.debug(f"[NFC] Sin lectura en {sid} (nfcDetected={nfc_detected}, nfcUidPartial={d.get('nfcUidPartial', 0)})")
-
-    if not nfc_detected:
-        return
-
     if uid == "0000":
-        logging.warning(f"[NFC] Lectura vacía en {sid} (UID=0x0000) - revisa el hardware NFC")
+        logging.debug(f"[NFC] Sin tarjeta en {sid}")
         return
+
+    logging.info(f"[NFC] TARJETA DETECTADA: UID={uid} en {sid}")
 
     # Obtener whitelist y buscar alias del UID
     try:
