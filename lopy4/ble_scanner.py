@@ -188,35 +188,53 @@ class BLEScanner:
             if not ble_client:
                 print('[BLE-LED] No se pudo conectar a {}'.format(mac_objetivo))
                 return False
-            
-            # Service y Characteristic UUIDs del ESP32
-            LED_SERVICE_UUID = "a6e3ed8d-6a2f-4a8b-9b8c-1c9f8e7d6c5b"
-            LED_COMMAND_CHAR_UUID = "b1d2e3f4-5a6b-7c8d-9e0f-a1b2c3d4e5f6"
-            
-            # Obtener el servicio
-            service = ble_client.service(LED_SERVICE_UUID)
-            if not service:
-                print('[BLE-LED] Servicio {} no encontrado'.format(LED_SERVICE_UUID))
+
+            # UUIDs como bytes LE (lo que Pycom devuelve al leer GATT del ESP32-Arduino)
+            # Servicio: a6e3ed8d-6a2f-4a8b-9b8c-1c9f8e7d6c5b → LE confirmado en log
+            LED_SERVICE_UUID = "5b6c7d8e9f1c8c9b8b4a2f6a8dede3a6"
+            # Característica: b1d2e3f4-5a6b-7c8d-9e0f-a1b2c3d4e5f6 → LE calculado
+            LED_COMMAND_CHAR_UUID = "f6e5d4c3b2a10f9e8d7c6b5af4e3d2b1"
+
+            def _uuid_norm(u):
+                if isinstance(u, int):
+                    return str(u)
+                try:
+                    # bytes o bytearray → hex directo
+                    return ''.join('{:02x}'.format(b) for b in u)
+                except TypeError:
+                    return str(u).replace('-', '').lower()
+
+            # Siempre desconectar, aunque falle la escritura
+            try:
+                services = ble_client.services()
+                if services is None:
+                    print('[BLE-LED] services() devolvió None')
+                    return False
+
+                target_char = None
+                for srv in services:
+                    if _uuid_norm(srv.uuid()) != LED_SERVICE_UUID:
+                        continue
+                    for ch in srv.characteristics():
+                        if _uuid_norm(ch.uuid()) == LED_COMMAND_CHAR_UUID:
+                            target_char = ch
+                            break
+                    break
+
+                if not target_char:
+                    print('[BLE-LED] Servicio/característica no encontrado')
+                    return False
+
+                # Construir y enviar comando: [led_id][red_on][green_on]
+                comando = bytes([led_id, 1 if red_on else 0, 1 if green_on else 0])
+                target_char.write(comando)
+
+                print('[BLE-LED] LED {} R={} G={}'.format(
+                    led_id, 1 if red_on else 0, 1 if green_on else 0))
+                return True
+
+            finally:
                 ble_client.disconnect()
-                return False
-            
-            # Obtener la característica
-            char = service.characteristic(LED_COMMAND_CHAR_UUID)
-            if not char:
-                print('[BLE-LED] Característica {} no encontrada'.format(LED_COMMAND_CHAR_UUID))
-                ble_client.disconnect()
-                return False
-            
-            # Construir y enviar comando: [led_id][red_on][green_on]
-            # led_id en el protocolo es 1-6, así que sumamos 1 al índice interno
-            comando = bytes([led_id, 1 if red_on else 0, 1 if green_on else 0])
-            char.write(comando)
-            
-            print('[BLE-LED] LED {} configurado: R={} G={}'.format(
-                led_id, 1 if red_on else 0, 1 if green_on else 0))
-            
-            ble_client.disconnect()
-            return True
             
         except Exception as e:
             print('[BLE-LED] Error: {}'.format(e))

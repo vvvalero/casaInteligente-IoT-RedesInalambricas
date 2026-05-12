@@ -120,6 +120,11 @@ LEDState ledStates[6] = {
     {false, false}   // Indicador 6: NFC         — apagado (sin actividad)
 };
 
+// Auto-apagado del indicador NFC (índice 5)
+// Verde (acceso concedido): 1500 ms — el usuario ya está pasando
+// Rojo  (denegado/desconocido): 2000 ms — necesita registrar el rechazo
+static unsigned long nfcLedOffAt = 0;  // millis() en que apagar; 0 = inactivo
+
 static void _setLEDState(int ledIndex, bool a, bool b) {
     if (ledIndex < 0 || ledIndex >= 6) return;
 
@@ -168,6 +173,13 @@ class LEDCommandCallback : public BLECharacteristicCallbacks {
         }
 
         _setLEDState(ledIndex, redOn != 0, greenOn != 0);
+
+        // Programar auto-apagado solo para el indicador NFC (índice 5)
+        if (ledIndex == 5) {
+            bool green = (greenOn != 0);
+            unsigned long timeout = green ? 1500UL : 2000UL;
+            nfcLedOffAt = millis() + timeout;
+        }
     }
 };
 
@@ -362,6 +374,12 @@ void setup() {
 // LOOP
 // ============================================================
 void loop() {
+    // Auto-apagado del indicador NFC tras el timeout configurado
+    if (nfcLedOffAt != 0 && (long)(millis() - nfcLedOffAt) >= 0) {
+        nfcLedOffAt = 0;
+        _setLEDState(5, false, false);
+    }
+
     // Expirar entradas caducadas y actualizar el anuncio si cambió algo
     if (_expireQueue()) {
         _buildAndStartAdvertising();
