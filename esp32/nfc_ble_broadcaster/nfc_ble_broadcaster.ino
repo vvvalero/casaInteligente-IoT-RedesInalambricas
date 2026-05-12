@@ -151,17 +151,18 @@ static void _setLEDState(int ledIndex, bool a, bool b) {
 // ============================================================
 class LEDCommandCallback : public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic* pCharacteristic) {
-        String value = pCharacteristic->getValue();
-        if (value.length() < 3) return;
+        uint8_t* data = pCharacteristic->getData();
+        size_t len = pCharacteristic->getLength();
+        if (len < 3) return;
 
-        uint8_t ledIndex = (uint8_t)value[0] - 1;
-        uint8_t redOn = (uint8_t)value[1];
-        uint8_t greenOn = (uint8_t)value[2];
+        uint8_t ledIndex = data[0] - 1;
+        uint8_t redOn = data[1];
+        uint8_t greenOn = data[2];
 
         // Validar que ledIndex esté en rango [0,5]
         if (ledIndex >= 6) {
             Serial.print("[LED] ERROR: Indicador ");
-            Serial.print((uint8_t)value[0]);
+            Serial.print(data[0]);
             Serial.println(" fuera de rango (debe ser 1-6)");
             return;
         }

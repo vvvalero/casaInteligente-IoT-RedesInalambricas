@@ -184,7 +184,7 @@ class BLEScanner:
             mac_bytes = bytes(int(x, 16) for x in mac_objetivo.split(':'))
             
             # Crear cliente BLE
-            ble_client = self._bt.connect(mac_bytes, timeout_ms=timeout_ms)
+            ble_client = self._bt.connect(mac_bytes)
             if not ble_client:
                 print('[BLE-LED] No se pudo conectar a {}'.format(mac_objetivo))
                 return False
