@@ -153,15 +153,21 @@ lora = LoRa(mode=LoRa.LORAWAN, region=LoRa.EU868)
 # NO descomentar en producción — borra la sesión guardada y fuerza rejoin cada arranque
 # lora.nvram_erase()
 
+def _joined():
+    try:
+        return lora.has_joined()
+    except OSError:
+        return False
+
 print('Intentando join OTAA...')
 join_backoff = 2
-while not lora.has_joined():
+while not _joined():
     sistema_join_espera()
     try:
         lora.join(activation=LoRa.OTAA, auth=(APP_EUI, APP_KEY), timeout=15000)
     except OSError as e:
         print('  Error join: {}'.format(e))
-    if not lora.has_joined():
+    if not _joined():
         pycom.rgbled(0x000000)
         print('  Esperando join (reintentando en {}s)...'.format(join_backoff))
         time.sleep(join_backoff)
@@ -333,9 +339,9 @@ while True:
     print('\n--- Ciclo {} ---'.format(NODE_TYPE))
 
     # Validar que seguimos conectados a LoRa
-    if not lora.has_joined():
+    if not _joined():
         print('ERROR: Perdida conexion LoRa, rejoin necesario')
-        while not lora.has_joined():
+        while not _joined():
             sistema_join_espera()
             try:
                 lora.join(activation=LoRa.OTAA, auth=(APP_EUI, APP_KEY), timeout=15000)
