@@ -164,52 +164,36 @@ class BLEScanner:
     def enviar_comando_led(self, mac_objetivo, led_id, red_on, green_on, timeout_ms=5000):
         """
         Se conecta al ESP32-NFC como cliente BLE y envía un comando de LED.
-        
-        Parámetros:
-            mac_objetivo: MAC del ESP32 (ej. "AA:BB:CC:DD:EE:FF")
-            led_id: ID del LED (1-6), se suma 1 internamente para el protocolo
-            red_on: 0 o 1 (encender LED rojo/naranja)
-            green_on: 0 o 1 (encender LED verde/azul)
-            timeout_ms: tiempo máximo para conectar y escribir
-        
-        Retorna True si tuvo éxito, False si falló.
-        
-        Protocolo del ESP32:
-            [led_id][red_on][green_on]
-            Indicador 6 es para el LED de acceso NFC
+        Reintenta una vez con 600 ms de pausa si la primera conexión falla
+        (el stack BLE de Pycom necesita margen tras stop_scan).
         """
-        try:
-            mac_objetivo = mac_objetivo.upper()
-            # Convertir MAC string "AA:BB:CC:DD:EE:FF" a bytes
-            mac_bytes = bytes(int(x, 16) for x in mac_objetivo.split(':'))
-            
-            # Crear cliente BLE
-            ble_client = self._bt.connect(mac_bytes)
-            if not ble_client:
-                print('[BLE-LED] No se pudo conectar a {}'.format(mac_objetivo))
-                return False
+        mac_objetivo = mac_objetivo.upper()
+        mac_bytes = bytes(int(x, 16) for x in mac_objetivo.split(':'))
 
-            # UUIDs como bytes LE (lo que Pycom devuelve al leer GATT del ESP32-Arduino)
-            # Servicio: a6e3ed8d-6a2f-4a8b-9b8c-1c9f8e7d6c5b → LE confirmado en log
-            LED_SERVICE_UUID = "5b6c7d8e9f1c8c9b8b4a2f6a8dede3a6"
-            # Característica: b1d2e3f4-5a6b-7c8d-9e0f-a1b2c3d4e5f6 → LE calculado
-            LED_COMMAND_CHAR_UUID = "f6e5d4c3b2a10f9e8d7c6b5af4e3d2b1"
+        LED_SERVICE_UUID      = "5b6c7d8e9f1c8c9b8b4a2f6a8dede3a6"
+        LED_COMMAND_CHAR_UUID = "f6e5d4c3b2a10f9e8d7c6b5af4e3d2b1"
 
-            def _uuid_norm(u):
-                if isinstance(u, int):
-                    return str(u)
-                try:
-                    # bytes o bytearray → hex directo
-                    return ''.join('{:02x}'.format(b) for b in u)
-                except TypeError:
-                    return str(u).replace('-', '').lower()
-
-            # Siempre desconectar, aunque falle la escritura
+        def _uuid_norm(u):
+            if isinstance(u, int):
+                return str(u)
             try:
+                return ''.join('{:02x}'.format(b) for b in u)
+            except TypeError:
+                return str(u).replace('-', '').lower()
+
+        for attempt in range(2):
+            ble_client = None
+            try:
+                # Pequeña pausa para que el stack BLE se estabilice tras stop_scan
+                time.sleep_ms(200)
+                ble_client = self._bt.connect(mac_bytes)
+                if not ble_client:
+                    print('[BLE-LED] No se pudo conectar a {}'.format(mac_objetivo))
+                    raise Exception('connect returned None')
+
                 services = ble_client.services()
                 if services is None:
-                    print('[BLE-LED] services() devolvió None')
-                    return False
+                    raise Exception('services() devolvió None')
 
                 target_char = None
                 for srv in services:
@@ -222,55 +206,58 @@ class BLEScanner:
                     break
 
                 if not target_char:
-                    print('[BLE-LED] Servicio/característica no encontrado')
-                    return False
+                    raise Exception('servicio/característica no encontrado')
 
-                # Construir y enviar comando: [led_id][red_on][green_on]
                 comando = bytes([led_id, 1 if red_on else 0, 1 if green_on else 0])
                 target_char.write(comando)
-
                 print('[BLE-LED] LED {} R={} G={}'.format(
                     led_id, 1 if red_on else 0, 1 if green_on else 0))
                 return True
 
+            except Exception as e:
+                print('[BLE-LED] Error (intento {}/2): {}'.format(attempt + 1, e))
+                if attempt == 0:
+                    time.sleep_ms(600)
             finally:
-                ble_client.disconnect()
+                if ble_client:
+                    try:
+                        ble_client.disconnect()
+                    except Exception:
+                        pass
 
-        except Exception as e:
-            print('[BLE-LED] Error: {}'.format(e))
-            return False
+        return False
 
     def enviar_batch_leds(self, mac_objetivo, states):
         """
         Conecta al ESP32 UNA SOLA VEZ y envía múltiples comandos de LED.
         states: lista de (led_id, red_on, green_on)
-        Retorna True si todos tuvieron éxito, False si alguno falló.
+        Reintenta una vez con 600 ms de pausa si la conexión falla.
         """
-        try:
-            mac_objetivo = mac_objetivo.upper()
-            mac_bytes = bytes(int(x, 16) for x in mac_objetivo.split(':'))
+        mac_objetivo = mac_objetivo.upper()
+        mac_bytes = bytes(int(x, 16) for x in mac_objetivo.split(':'))
 
-            ble_client = self._bt.connect(mac_bytes)
-            if not ble_client:
-                print('[BLE-LED] Batch: no se pudo conectar a {}'.format(mac_objetivo))
-                return False
+        LED_SERVICE_UUID      = "5b6c7d8e9f1c8c9b8b4a2f6a8dede3a6"
+        LED_COMMAND_CHAR_UUID = "f6e5d4c3b2a10f9e8d7c6b5af4e3d2b1"
 
-            LED_SERVICE_UUID    = "5b6c7d8e9f1c8c9b8b4a2f6a8dede3a6"
-            LED_COMMAND_CHAR_UUID = "f6e5d4c3b2a10f9e8d7c6b5af4e3d2b1"
-
-            def _uuid_norm(u):
-                if isinstance(u, int):
-                    return str(u)
-                try:
-                    return ''.join('{:02x}'.format(b) for b in u)
-                except TypeError:
-                    return str(u).replace('-', '').lower()
-
+        def _uuid_norm(u):
+            if isinstance(u, int):
+                return str(u)
             try:
+                return ''.join('{:02x}'.format(b) for b in u)
+            except TypeError:
+                return str(u).replace('-', '').lower()
+
+        for attempt in range(2):
+            ble_client = None
+            try:
+                time.sleep_ms(200)
+                ble_client = self._bt.connect(mac_bytes)
+                if not ble_client:
+                    raise Exception('connect returned None')
+
                 services = ble_client.services()
                 if services is None:
-                    print('[BLE-LED] Batch: services() devolvió None')
-                    return False
+                    raise Exception('services() devolvió None')
 
                 target_char = None
                 for srv in services:
@@ -283,8 +270,7 @@ class BLEScanner:
                     break
 
                 if not target_char:
-                    print('[BLE-LED] Batch: servicio/característica no encontrado')
-                    return False
+                    raise Exception('servicio/característica no encontrado')
 
                 for led_id, red_on, green_on in states:
                     target_char.write(bytes([led_id, 1 if red_on else 0, 1 if green_on else 0]))
@@ -292,12 +278,18 @@ class BLEScanner:
                 print('[BLE-LED] Batch {} indicadores OK'.format(len(states)))
                 return True
 
+            except Exception as e:
+                print('[BLE-LED] Batch error (intento {}/2): {}'.format(attempt + 1, e))
+                if attempt == 0:
+                    time.sleep_ms(600)
             finally:
-                ble_client.disconnect()
+                if ble_client:
+                    try:
+                        ble_client.disconnect()
+                    except Exception:
+                        pass
 
-        except Exception as e:
-            print('[BLE-LED] Batch error: {}'.format(e))
-            return False
+        return False
 
     def deinit(self):
         """Libera el stack BLE."""

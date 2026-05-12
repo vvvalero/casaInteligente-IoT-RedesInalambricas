@@ -273,27 +273,34 @@ class LEDStateManager:
             "humidity": set()
         }
         self._lock = threading.Lock()
+        self._dirty = False
 
     def add_alert(self, sensor_id, alert_type):
-        """Agrega alerta para un nodo/tipo"""
+        """Marca alerta activa; el downlink se envía al llamar flush_if_dirty()."""
         with self._lock:
             if sensor_id in self.node_alerts:
                 self.node_alerts[sensor_id].add(alert_type)
             if alert_type in self.type_alerts:
                 self.type_alerts[alert_type].add(sensor_id)
-            led_updates = self._calculate_led_colors()
-
-        _send_all_leds(led_updates)
+            self._dirty = True
 
     def remove_alert(self, sensor_id, alert_type):
-        """Elimina alerta para un nodo/tipo"""
+        """Marca alerta resuelta; el downlink se envía al llamar flush_if_dirty()."""
         with self._lock:
             if sensor_id in self.node_alerts:
                 self.node_alerts[sensor_id].discard(alert_type)
             if alert_type in self.type_alerts:
                 self.type_alerts[alert_type].discard(sensor_id)
-            led_updates = self._calculate_led_colors()
+            self._dirty = True
 
+    def flush_if_dirty(self):
+        """Envía UN SOLO downlink 0x0A con el estado actual si hubo cambios.
+        Debe llamarse una vez al terminar de evaluar todas las reglas del ciclo."""
+        with self._lock:
+            if not self._dirty:
+                return
+            self._dirty = False
+            led_updates = self._calculate_led_colors()
         _send_all_leds(led_updates)
 
     def _calculate_led_colors(self):
@@ -924,6 +931,7 @@ def notify():
                 regla(entidad, sid)
             except Exception as e:
                 logging.error(f"Error en regla {regla.__name__}: {e}")
+        _led_manager.flush_if_dirty()
     return jsonify({"status": "ok"}), 200
 
 
@@ -955,6 +963,8 @@ def _process_uplink(payload: dict):
                 regla(datos, sensor_id)
             except Exception as e:
                 logging.error(f"Error en regla {regla.__name__}: {e}")
+
+        _led_manager.flush_if_dirty()
 
     except Exception as e:
         logging.error(f"Error procesando uplink: {e}")
