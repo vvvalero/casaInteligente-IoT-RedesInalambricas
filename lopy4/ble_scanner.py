@@ -161,6 +161,67 @@ class BLEScanner:
             i += length + 1
         return []
 
+    def enviar_comando_led(self, mac_objetivo, led_id, red_on, green_on, timeout_ms=5000):
+        """
+        Se conecta al ESP32-NFC como cliente BLE y envía un comando de LED.
+        
+        Parámetros:
+            mac_objetivo: MAC del ESP32 (ej. "AA:BB:CC:DD:EE:FF")
+            led_id: ID del LED (1-6), se suma 1 internamente para el protocolo
+            red_on: 0 o 1 (encender LED rojo/naranja)
+            green_on: 0 o 1 (encender LED verde/azul)
+            timeout_ms: tiempo máximo para conectar y escribir
+        
+        Retorna True si tuvo éxito, False si falló.
+        
+        Protocolo del ESP32:
+            [led_id][red_on][green_on]
+            Indicador 6 es para el LED de acceso NFC
+        """
+        try:
+            mac_objetivo = mac_objetivo.upper()
+            # Convertir MAC string "AA:BB:CC:DD:EE:FF" a bytes
+            mac_bytes = bytes(int(x, 16) for x in mac_objetivo.split(':'))
+            
+            # Crear cliente BLE
+            ble_client = self._bt.connect(mac_bytes, timeout_ms=timeout_ms)
+            if not ble_client:
+                print('[BLE-LED] No se pudo conectar a {}'.format(mac_objetivo))
+                return False
+            
+            # Service y Characteristic UUIDs del ESP32
+            LED_SERVICE_UUID = "a6e3ed8d-6a2f-4a8b-9b8c-1c9f8e7d6c5b"
+            LED_COMMAND_CHAR_UUID = "b1d2e3f4-5a6b-7c8d-9e0f-a1b2c3d4e5f6"
+            
+            # Obtener el servicio
+            service = ble_client.service(LED_SERVICE_UUID)
+            if not service:
+                print('[BLE-LED] Servicio {} no encontrado'.format(LED_SERVICE_UUID))
+                ble_client.disconnect()
+                return False
+            
+            # Obtener la característica
+            char = service.characteristic(LED_COMMAND_CHAR_UUID)
+            if not char:
+                print('[BLE-LED] Característica {} no encontrada'.format(LED_COMMAND_CHAR_UUID))
+                ble_client.disconnect()
+                return False
+            
+            # Construir y enviar comando: [led_id][red_on][green_on]
+            # led_id en el protocolo es 1-6, así que sumamos 1 al índice interno
+            comando = bytes([led_id, 1 if red_on else 0, 1 if green_on else 0])
+            char.write(comando)
+            
+            print('[BLE-LED] LED {} configurado: R={} G={}'.format(
+                led_id, 1 if red_on else 0, 1 if green_on else 0))
+            
+            ble_client.disconnect()
+            return True
+            
+        except Exception as e:
+            print('[BLE-LED] Error: {}'.format(e))
+            return False
+
     def deinit(self):
         """Libera el stack BLE."""
         try:

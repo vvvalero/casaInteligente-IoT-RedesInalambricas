@@ -225,9 +225,15 @@ def _leer_dormitorio():
         if uid_key in NFC_WHITELIST_LOCAL:
             print('  NFC local: {} → AUTORIZADO'.format(uid_key))
             parpadear(led_verde, veces=2, intervalo=0.4)
+            # Enviar comando LED al ESP32: indicador 6 verde (acceso concedido)
+            if _ble and ESP32_NFC_MAC:
+                _ble.enviar_comando_led(ESP32_NFC_MAC, 6, 0, 1)
         else:
             print('  NFC local: {} → DESCONOCIDO (verificando servidor)'.format(uid_key))
             parpadear(led_amarillo, veces=2, intervalo=0.4)
+            # Enviar comando LED al ESP32: indicador 6 rojo (acceso denegado)
+            if _ble and ESP32_NFC_MAC:
+                _ble.enviar_comando_led(ESP32_NFC_MAC, 6, 1, 0)
 
     if not uids:
         uids = ['00000000']
