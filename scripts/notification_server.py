@@ -9,7 +9,7 @@
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import requests, json, logging, base64, time, os, re, asyncio, threading
+import requests, json, logging, base64, time, os, re, asyncio, threading, hashlib
 from datetime import datetime, timezone
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -43,6 +43,28 @@ _downlink_queue = []
 _downlink_queue_lock = threading.Lock()
 _downlink_queue_event = threading.Event()
 _DOWNLINK_DELAY_MS = 300  # Delay entre downlinks consecutivos
+
+# Estado de alertas por sensor: {(sensor_id, alert_key): bool}
+# Permite enviar downlink solo cuando el estado cambia, no en cada uplink.
+_alert_states: dict = {}
+
+# Deduplicación de /notify: evita procesar la misma lectura N veces por las N suscripciones de Orion
+_notify_last_ts: dict = {}   # {sensor_id: tiempo epoch}
+_notify_last_ts_lock = threading.Lock()
+_NOTIFY_DEDUP_WINDOW = 2.0   # segundos — ventana dentro de la cual se considera la misma lectura
+
+# Hash de la última whitelist sincronizada al dispositivo dormitorio
+_wl_hash_last_sent: str | None = None
+_wl_hash_lock = threading.Lock()
+
+
+def _state_changed(sid: str, key: str, new_val: bool) -> bool:
+    """Devuelve True (y actualiza el estado) solo si el valor cambió."""
+    k = (sid, key)
+    if _alert_states.get(k) == new_val:
+        return False
+    _alert_states[k] = new_val
+    return True
 
 # ============================================================
 # BLE LED CLIENT (Control de ESP32)
@@ -515,10 +537,12 @@ def _alerta(tipo, active, msg, severity, sid=""):
 # HELPERS — TTN Downlink
 # ============================================================
 
-def _downlink(sensor_id, bytes_list):
+def _downlink(sensor_id, bytes_list, replace=False, confirmed=False):
     """Agrega downlink a cola para procesamiento secuencial.
-    Deduplicación por (device, comando): comandos distintos coexisten en cola
-    para que el 0x08 (sync whitelist) no machaque un 0x03/0x04 (acceso)."""
+    Deduplicación por (device, comando): comandos distintos coexisten en cola.
+    replace=True  → usa /down/replace (borra cola TTN), útil para whitelist sync.
+    confirmed=True → TTN pide ACK al device y reintenta automáticamente respetando
+                     el duty cycle; ideal para mensajes críticos como la whitelist."""
     device = SENSOR_TO_TTN.get(sensor_id)
     if not device:
         return
@@ -528,12 +552,12 @@ def _downlink(sensor_id, bytes_list):
 
     cmd = bytes_list[0] if bytes_list else None
     with _downlink_queue_lock:
-        for i, (d, bl) in enumerate(_downlink_queue):
+        for i, (d, bl, _r, _c) in enumerate(_downlink_queue):
             if d == device and (bl[0] if bl else None) == cmd:
-                _downlink_queue[i] = (device, bytes_list)
+                _downlink_queue[i] = (device, bytes_list, replace, confirmed)
                 break
         else:
-            _downlink_queue.append((device, bytes_list))
+            _downlink_queue.append((device, bytes_list, replace, confirmed))
     _downlink_queue_event.set()
 
 
@@ -548,21 +572,22 @@ def _downlink_worker():
                 with _downlink_queue_lock:
                     if not _downlink_queue:
                         break
-                    device, bytes_list = _downlink_queue.pop(0)
+                    device, bytes_list, use_replace, use_confirmed = _downlink_queue.pop(0)
 
-                # Enviar downlink fuera del lock
-                # Use push so 0x08 (whitelist sync) is queued and not overwritten
-                # by later commands before the next uplink RX window.
-                url = f"{TTN_API_BASE}/as/applications/{TTN_APP_ID}/devices/{device}/down/push"
+                endpoint = "replace" if use_replace else "push"
+                url = f"{TTN_API_BASE}/as/applications/{TTN_APP_ID}/devices/{device}/down/{endpoint}"
                 hdrs = {
                     "Authorization": f"Bearer {TTN_API_KEY}",
                     "Content-Type": "application/json"
                 }
-                body = {"downlinks": [{
+                downlink_entry = {
                     "f_port": 1,
                     "frm_payload": base64.b64encode(bytes(bytes_list)).decode(),
-                    "priority": "NORMAL"
-                }]}
+                    "priority": "HIGH" if use_confirmed else "NORMAL",
+                }
+                if use_confirmed:
+                    downlink_entry["confirmed"] = True
+                body = {"downlinks": [downlink_entry]}
                 try:
                     r = _session.post(url, json=body, headers=hdrs, timeout=5)
                     if r.status_code == 429:
@@ -571,7 +596,8 @@ def _downlink_worker():
                     elif r.status_code not in (200, 202, 204):
                         logging.error(f"Downlink {device} {bytes_list} → {r.status_code}: {r.text[:200]}")
                     else:
-                        logging.info(f"Downlink {device} {bytes_list} → {r.status_code}")
+                        conf_tag = " [confirmed]" if use_confirmed else ""
+                        logging.info(f"Downlink {device} {bytes_list} ({endpoint}){conf_tag} → {r.status_code}")
                 except Exception as e:
                     logging.error(f"Downlink error {device}: {e}")
 
@@ -661,12 +687,18 @@ def _serialize_nfc_whitelist(wl_dict):
     return ",".join(pairs)
 
 
-def _push_whitelist_downlink():
+def _push_whitelist_downlink(force=False):
     """Envía la whitelist actual de Orion al LoPy4 dormitorio como downlink 0x08.
     Formato: [0x08][count][uid1_hi][uid1_lo][uid2_hi][uid2_lo]...
     Los UIDs se almacenan como 4 caracteres hex (16 bits).
     Máximo 24 UIDs por limitación del payload LoRaWAN (51 bytes disponibles).
-    """
+
+    Solo envía si la whitelist cambió desde el último sync (hash tracking).
+    force=True omite la comprobación de hash (útil para sync manual explícito).
+    El downlink se marca como confirmed para que TTN gestione los reintentos
+    automáticamente respetando el duty cycle del gateway."""
+    global _wl_hash_last_sent
+
     try:
         r = _session.get(
             f"{ORION}/v2/entities/Sensor:s2/attrs/nfcAuthorizedUIDs/value",
@@ -687,8 +719,16 @@ def _push_whitelist_downlink():
         wl_dict = {}
 
     if not wl_dict:
-        logging.info("Whitelist vacía, no se envía downlink")
-        return
+        logging.warning("_push_whitelist_downlink: whitelist vacía en Orion, no se envía downlink")
+        return 0
+
+    # Calcular hash de la whitelist actual
+    wl_hash = hashlib.md5(str(sorted(wl_dict.items())).encode()).hexdigest()
+
+    with _wl_hash_lock:
+        if not force and wl_hash == _wl_hash_last_sent:
+            logging.debug("Whitelist sin cambios desde último sync, downlink omitido")
+            return 0
 
     payload = [0x08, 0]  # Comando 0x08, count se actualiza después
     valid_count = 0
@@ -708,8 +748,11 @@ def _push_whitelist_downlink():
 
     payload[1] = valid_count
     if valid_count > 0:
-        _downlink("Sensor:s2", payload)
-        logging.info(f"Whitelist sync downlink enviado: {valid_count} UIDs ('{', '.join(list(wl_dict.keys())[:5])}')")
+        _downlink("Sensor:s2", payload, replace=True, confirmed=True)
+        with _wl_hash_lock:
+            _wl_hash_last_sent = wl_hash
+        logging.info(f"Whitelist sync downlink enviado: {valid_count} UIDs ('{', '.join(list(wl_dict.keys())[:5])}') [confirmed]")
+    return valid_count
 
 
 # ============================================================
@@ -723,11 +766,13 @@ def r_temp_alta(d, sid):
     if t > 28:
         logging.warning(f"Temp alta {t}C en {sid}")
         _alerta("temp_high", True, f"Temperatura alta: {t}C", "warning", sid)
-        _downlink(sid, [0x06, 0x01])
+        if _state_changed(sid, "temp_high", True):
+            _downlink(sid, [0x06, 0x01])
         _led_manager.add_alert(sid, "temp")
     else:
         _alerta("temp_high", False, "", "info", sid)
-        _downlink(sid, [0x06, 0x02])
+        if _state_changed(sid, "temp_high", False):
+            _downlink(sid, [0x06, 0x02])
         _led_manager.remove_alert(sid, "temp")
 
 
@@ -738,11 +783,13 @@ def r_temp_baja(d, sid):
     if t < 10:
         logging.warning(f"Temp baja {t}C en {sid}")
         _alerta("temp_low", True, f"Temperatura baja: {t}C", "warning", sid)
-        _downlink(sid, [0x06, 0x00])
+        if _state_changed(sid, "temp_low", True):
+            _downlink(sid, [0x06, 0x00])
         _led_manager.add_alert(sid, "temp")
     else:
         _alerta("temp_low", False, "", "info", sid)
-        _downlink(sid, [0x06, 0x02])
+        if _state_changed(sid, "temp_low", False):
+            _downlink(sid, [0x06, 0x02])
         _led_manager.remove_alert(sid, "temp")
 
 
@@ -753,11 +800,13 @@ def r_humedad(d, sid):
     if h > 80:
         logging.warning(f"Humedad alta {h}% en {sid}")
         _alerta("humidity", True, f"Humedad excesiva: {h}%", "warning", sid)
-        _downlink(sid, [0x06, 0x03])
+        if _state_changed(sid, "humidity", True):
+            _downlink(sid, [0x06, 0x03])
         _led_manager.add_alert(sid, "humidity")
     else:
         _alerta("humidity", False, "", "info", sid)
-        _downlink(sid, [0x06, 0x02])
+        if _state_changed(sid, "humidity", False):
+            _downlink(sid, [0x06, 0x02])
         _led_manager.remove_alert(sid, "humidity")
 
 
@@ -767,11 +816,13 @@ def r_vibracion(d, sid):
         mag = d.get("accelerationMagnitude", 0)
         logging.warning(f"Vibracion {mag:.2f}g en {sid}")
         _alerta("vibration", True, f"Vibracion: {mag:.2f}g", "critical", sid)
-        _downlink(sid, [0x01, 255, 0, 255])
+        if _state_changed(sid, "vibration", True):
+            _downlink(sid, [0x01, 255, 0, 255])
         _led_manager.add_alert(sid, "vibration")
     else:
         _alerta("vibration", False, "", "info", sid)
-        _downlink(sid, [0x01, 0, 255, 0])
+        if _state_changed(sid, "vibration", False):
+            _downlink(sid, [0x01, 0, 255, 0])
         _led_manager.remove_alert(sid, "vibration")
 
 
@@ -858,10 +909,12 @@ def r_aforo(d, sid):
     if n > AFORO_MAX:
         logging.warning(f"Aforo superado: {n} BLE en {sid}")
         _alerta("aforo", True, f"Aforo: {n} dispositivos BLE", "warning", sid)
-        _downlink(sid, [0x05, 0x01])
+        if _state_changed(sid, "aforo", True):
+            _downlink(sid, [0x05, 0x01])
     else:
         _alerta("aforo", False, "", "info", sid)
-        _downlink(sid, [0x05, 0x00])
+        if _state_changed(sid, "aforo", False):
+            _downlink(sid, [0x05, 0x00])
 
 
 def r_lux_exterior(d, sid):
@@ -871,10 +924,12 @@ def r_lux_exterior(d, sid):
     if lux < 50:
         logging.warning(f"Lux exterior baja: {lux} en {sid}")
         _alerta("lux_low", True, f"Luz baja: {lux} lx", "warning", sid)
-        _downlink(sid, [0x07, 0x01])
+        if _state_changed(sid, "lux_low", True):
+            _downlink(sid, [0x07, 0x01])
     else:
         _alerta("lux_low", False, "", "info", sid)
-        _downlink(sid, [0x07, 0x00])
+        if _state_changed(sid, "lux_low", False):
+            _downlink(sid, [0x07, 0x00])
 
 
 TODAS_REGLAS = [
@@ -896,8 +951,16 @@ def notify():
     if not datos:
         return jsonify({"error": "payload vacío"}), 400
     logging.info(f"Notificacion sub={datos.get('subscriptionId', '?')}")
+    now = time.time()
     for entidad in datos.get("data", []):
         sid = entidad.get("id", "")
+        # Deduplicación: múltiples suscripciones de Orion disparan /notify para la misma
+        # lectura. Solo procesamos reglas (y posibles downlinks) una vez por sensor
+        # dentro de la ventana de tiempo definida.
+        with _notify_last_ts_lock:
+            if now - _notify_last_ts.get(sid, 0) < _NOTIFY_DEDUP_WINDOW:
+                continue
+            _notify_last_ts[sid] = now
         for regla in TODAS_REGLAS:
             if regla in REGLAS_SOLO_UPLINK:
                 continue
@@ -908,51 +971,54 @@ def notify():
     return jsonify({"status": "ok"}), 200
 
 
-@app.route("/iot/ul", methods=["POST"])
-def iot_webhook():
-    """Webhook para TTN uplinks — procesa datos de LoRaWAN y actualiza Orion"""
-    payload = request.get_json(force=True, silent=True)
-    if not payload:
-        return jsonify({"error": "payload vacío"}), 400
-
+def _process_uplink(payload: dict):
+    """Procesa el uplink TTN en segundo plano para no bloquear el webhook."""
     try:
-        # Extraer device_id desde TTN webhook format
         device_id = payload.get("end_device_ids", {}).get("device_id", "")
         if not device_id:
-            logging.warning("No device_id en webhook TTN")
-            return jsonify({"error": "missing device_id"}), 400
+            return
 
-        # Mapear device_id (ej. "lopy4-salon") a sensor (ej. "Sensor:s1")
         sensor_map = {v: k for k, v in SENSOR_TO_TTN.items()}
         sensor_id = sensor_map.get(device_id)
         if not sensor_id:
             logging.warning(f"Device {device_id} no mapea a sensor conocido")
-            return jsonify({"error": f"unknown device: {device_id}"}), 400
+            return
 
-        # Extraer datos decodificados del uplink
         uplink = payload.get("uplink_message", {})
         datos = uplink.get("decoded_payload", {})
         if not datos:
             logging.info(f"Sin decoded_payload para {sensor_id}")
-            return jsonify({"status": "ok, no decoded payload"}), 200
+            return
 
         logging.info(f"TTN uplink {sensor_id}: {datos}")
 
-        # Crear/actualizar atributos en Orion
         _update_attrs(sensor_id, datos)
 
-        # Aplicar reglas de automatización
         for regla in TODAS_REGLAS:
             try:
                 regla(datos, sensor_id)
             except Exception as e:
                 logging.error(f"Error en regla {regla.__name__}: {e}")
 
-        return jsonify({"status": "ok"}), 200
-
     except Exception as e:
-        logging.error(f"Error en /iot/ul: {e}")
-        return jsonify({"error": str(e)}), 500
+        logging.error(f"Error procesando uplink: {e}")
+
+
+@app.route("/iot/ul", methods=["POST"])
+def iot_webhook():
+    """Webhook para TTN uplinks — responde inmediatamente y procesa en segundo plano."""
+    payload = request.get_json(force=True, silent=True)
+    if not payload:
+        return jsonify({"error": "payload vacío"}), 400
+
+    # Validación rápida antes de lanzar el hilo
+    device_id = payload.get("end_device_ids", {}).get("device_id", "")
+    if not device_id:
+        logging.warning("No device_id en webhook TTN")
+        return jsonify({"error": "missing device_id"}), 400
+
+    threading.Thread(target=_process_uplink, args=(payload,), daemon=True).start()
+    return jsonify({"status": "ok"}), 200
 
 
 @app.route("/health", methods=["GET"])
@@ -1163,8 +1229,11 @@ def api_delete_uid(nombre):
 def api_nfc_sync():
     """Fuerza sincronización explícita de la whitelist al LoPy4 dormitorio"""
     try:
-        _push_whitelist_downlink()
-        return jsonify({"status": "ok", "message": "Sincronización de whitelist NFC iniciada"}), 200
+        count = _push_whitelist_downlink(force=True)
+        if count:
+            return jsonify({"status": "ok", "message": f"Whitelist enviada: {count} UIDs"}), 200
+        else:
+            return jsonify({"status": "error", "message": "Whitelist vacía en Orion — añade tarjetas primero"}), 400
     except Exception as e:
         logging.error(f"api_nfc_sync error: {e}")
         return jsonify({"error": str(e)}), 500
@@ -1181,18 +1250,21 @@ def api_led(nodo):
     _downlink(f"Sensor:{nodo}", [cmd_byte, r, g, b])
     return jsonify({"status": "ok"}), 200
 
+# Iniciar el worker de downlinks al importar el módulo — funciona tanto con
+# gunicorn (que no ejecuta __main__) como con ejecución directa.
+# Con gunicorn -w N se inicia un thread por worker process, lo cual es correcto:
+# cada proceso gestiona su propia cola de forma independiente.
+_downlink_thread = threading.Thread(target=_downlink_worker, daemon=True, name="downlink-worker")
+_downlink_thread.start()
+logging.info(f"Downlink worker iniciado (delay={_DOWNLINK_DELAY_MS}ms entre comandos)")
+
+_init_ble_client()
+
 if __name__ == "__main__":
     logging.info("Servidor iniciando en puerto 5000...")
     logging.info(f"Orion: {ORION}")
     logging.info(f"TTN App: {TTN_APP_ID}")
     if "XXXXXXXXXX" in TTN_API_KEY:
         logging.warning("TTN_API_KEY no configurada — downlinks desactivados")
-
-    _init_ble_client()
-
-    # Iniciar worker de downlinks (procesa secuencialmente con delay)
-    downlink_thread = threading.Thread(target=_downlink_worker, daemon=True)
-    downlink_thread.start()
-    logging.info(f"Downlink worker iniciado (delay={_DOWNLINK_DELAY_MS}ms entre comandos)")
 
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
