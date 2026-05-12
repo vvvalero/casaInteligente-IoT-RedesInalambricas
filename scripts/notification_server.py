@@ -392,7 +392,7 @@ def _update_attrs(eid, datos):
     """Actualiza atributos escalares del sensor en Orion vía PATCH keyValues.
     Filtra objetos anidados y duplicados con sufijo de canal Cayenne LPP (_N)."""
     # Campos LPP genéricos sin semántica en Orion (son artefactos del primer canal de cada tipo)
-    _LPP_GENERIC = {"analogInput", "digitalInput", "raw_hex"}
+    _LPP_GENERIC = {"analogInput", "digitalInput", "raw_hex", "aforoAlerta"}
     attrs = {}
     for k, v in datos.items():
         if isinstance(v, (dict, list)):

@@ -26,6 +26,28 @@ header() {
     echo -e "\n${BLD}${CYN}=== $1 ===${RST}"
 }
 
+# Repite el uplink cada $REPEAT_INTERVAL segundos durante $REPEAT_DURATION segundos.
+# Necesario porque el LoPy4 real sobreescribe el estado simulado en cada uplink real.
+# El LoPy4-dormitorio puede tardar hasta TX_INTERVAL (~60 s) en hacer TX y recibir el downlink.
+REPEAT_INTERVAL=10
+REPEAT_DURATION=90
+
+persist() {
+    local device="$1"
+    local payload="$2"
+    local label="$3"
+    local end=$((SECONDS + REPEAT_DURATION))
+    echo -e "  ${YLW}Modo persistente: enviando cada ${REPEAT_INTERVAL}s durante ${REPEAT_DURATION}s${RST}"
+    echo -e "  ${YLW}(el LoPy4-dormitorio debe hacer TX para recibir el downlink)${RST}"
+    while [ $SECONDS -lt $end ]; do
+        uplink "$device" "$payload"
+        local restante=$((end - SECONDS))
+        printf "  Quedan %ds — Ctrl+C para cancelar\r" "$restante"
+        sleep $REPEAT_INTERVAL
+    done
+    echo -e "\n  ${GRN}Fin del modo persistente.${RST}"
+}
+
 status() {
     echo -e "\n${BLD}Estado actual de alertas:${RST}"
     curl -s "$SERVER/api/alertas" | python3 -m json.tool 2>/dev/null || \
@@ -44,6 +66,7 @@ menu() {
     echo -e "  ${YLW}3${RST}  Temp alta (>28°C) en s3 Exterior"
     echo -e "  ${YLW}4${RST}  Temp alta en s1 + s2  → Indicador 4 AMARILLO"
     echo -e "  ${YLW}5${RST}  Temp baja (<10°C) en s3 Exterior"
+    echo -e "  ${BLU}p${RST}  ${BLU}Persistente: repite s1 temp alta cada 10 s durante 90 s${RST}"
     echo -e ""
     echo -e " ${BLD}── Humedad ─────────────────────────────${RST}"
     echo -e "  ${YLW}6${RST}  Humedad alta (>80%) en s1 Salón"
@@ -92,6 +115,14 @@ run_option() {
             header "Temp baja en s3 (Exterior)"
             uplink "lopy4-exterior" '{"temperature":5,"humidity":50}'
             echo -e "  ${BLU}→ Indicador 3 ROJO + Indicador 4 NARANJA${RST}"
+            ;;
+        p|P)
+            header "Persistente: s1 temp alta (90 s)"
+            echo -e "  ${YLW}Motivo: el LoPy4 real sobreescribe el simulado en cada uplink.${RST}"
+            echo -e "  ${YLW}Este modo mantiene la alerta viva hasta que el LoPy4-dormitorio${RST}"
+            echo -e "  ${YLW}haga TX y reciba el downlink 0x0A con el estado de alerta.${RST}\n"
+            persist "lopy4-salon" '{"temperature":35,"humidity":50}' "s1 temp alta"
+            echo -e "  ${RED}→ Indicador 1 ROJO + Indicador 4 NARANJA${RST}"
             ;;
         6)
             header "Humedad alta en s1 (Salón)"
