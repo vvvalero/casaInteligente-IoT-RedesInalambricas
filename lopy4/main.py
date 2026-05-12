@@ -40,7 +40,7 @@ from LTR329ALS01 import LTR329ALS01
 from LIS2HH12 import LIS2HH12
 from led import (sistema_arrancando, sistema_join_espera, sistema_conectado,
                  sistema_transmitiendo, sistema_error, sistema_downlink_recibido,
-                 led_desde_bytes, led_rojo, led_verde, led_azul, led_amarillo,
+                 led_apagar, led_desde_bytes, led_rojo, led_verde, led_azul, led_amarillo,
                  led_naranja, led_blanco, led_magenta, parpadear)
 
 # ============================================================
@@ -168,7 +168,7 @@ while not _joined():
     except OSError as e:
         print('  Error join: {}'.format(e))
     if not _joined():
-        pycom.rgbled(0x000000)
+        led_apagar()
         print('  Esperando join (reintentando en {}s)...'.format(join_backoff))
         time.sleep(join_backoff)
         join_backoff = min(join_backoff + 3, 30)
@@ -348,7 +348,7 @@ while True:
             except OSError:
                 pass
             if not lora.has_joined():
-                pycom.rgbled(0x000000)
+                led_apagar()
                 time.sleep(5)
         sistema_conectado()
         print('Reconectado a LoRa')
