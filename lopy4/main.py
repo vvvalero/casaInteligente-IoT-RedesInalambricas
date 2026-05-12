@@ -332,6 +332,8 @@ def _procesar_downlink(data):
 # ============================================================
 while True:
     print('\n--- Ciclo {} ---'.format(NODE_TYPE))
+    if NODE_TYPE == 'dormitorio':
+        print('  [WL] {} entradas: {}'.format(len(NFC_WHITELIST_LOCAL), sorted(NFC_WHITELIST_LOCAL)))
 
     # Validar que seguimos conectados a LoRa
     if not _joined():
