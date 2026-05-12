@@ -210,11 +210,12 @@ def _leer_salon():
 
 def _leer_dormitorio():
     """
-    Retorna (payloads, ble_cmd) donde:
-      payloads: lista de bytes Cayenne LPP, uno por UID en cola (o uno vacío).
-      ble_cmd:  tupla (led_id, red_on, green_on) para enviar al ESP32 después
-                del uplink LoRa, o None si no hay UIDs.
-    Separar la lectura del comando BLE evita que la conexión GATT bloquee el uplink.
+    Retorna payloads: lista de bytes Cayenne LPP, uno por UID en cola (o uno vacío).
+
+    Feedback inmediato en el Indicador 6 del protoboard (ESP32):
+      - UID en whitelist  → verde inmediato (R=0, G=1), sin esperar al servidor.
+      - UID desconocido   → ámbar inmediato (R=1, G=1) mientras el servidor verifica;
+                            el downlink 0x03/0x04 actualizará al resultado final.
     """
     temp, hum, lux = _leer_comunes()
 
@@ -223,18 +224,17 @@ def _leer_dormitorio():
     print('  T={:.1f}C H={:.1f}% Lux={} NFC=[{}]'.format(
         temp, hum, lux, ', '.join(uids) if uids else 'vacío'))
 
-    ble_cmd = None
     for uid_str in uids:
         uid_int_loc = int(uid_str[:8], 16) if len(uid_str) >= 8 else int(uid_str, 16)
         uid_key = '{:04X}'.format(uid_int_loc & 0xFFFF)
         if uid_key in NFC_WHITELIST_LOCAL:
-            print('  NFC local: {} → AUTORIZADO'.format(uid_key))
-            parpadear(led_verde, veces=2, intervalo=0.4)
-            ble_cmd = (6, 0, 1)   # indicador 6 verde
+            print('  NFC local: {} → AUTORIZADO (respuesta inmediata)'.format(uid_key))
+            if _ble and ESP32_NFC_MAC:
+                _ble.enviar_comando_led(ESP32_NFC_MAC, 6, 0, 1)
         else:
-            print('  NFC local: {} → DESCONOCIDO (verificando servidor)'.format(uid_key))
-            parpadear(led_amarillo, veces=2, intervalo=0.4)
-            ble_cmd = (6, 1, 0)   # indicador 6 rojo
+            print('  NFC local: {} → DESCONOCIDO (verificando con servidor)'.format(uid_key))
+            if _ble and ESP32_NFC_MAC:
+                _ble.enviar_comando_led(ESP32_NFC_MAC, 6, 1, 1)  # ámbar: verificando...
 
     if not uids:
         uids = ['00000000']
@@ -250,7 +250,7 @@ def _leer_dormitorio():
         lpp.add_analog_input(4, uid_analog)
         lpp.add_digital_input(5, ROOM_ID['dormitorio'])
         payloads.append(bytes(lpp.get_buffer()))
-    return payloads, ble_cmd
+    return payloads
 
 
 def _leer_exterior():
@@ -295,8 +295,12 @@ def _procesar_downlink(data):
         parpadear(_c, veces=3)
     elif cmd == 0x03:
         parpadear(led_verde, veces=2, intervalo=0.4)
+        if NODE_TYPE == 'dormitorio' and _ble and ESP32_NFC_MAC:
+            _ble.enviar_comando_led(ESP32_NFC_MAC, 6, 0, 1)  # verde: acceso concedido
     elif cmd == 0x04:
         parpadear(led_rojo, veces=3, intervalo=0.2)
+        if NODE_TYPE == 'dormitorio' and _ble and ESP32_NFC_MAC:
+            _ble.enviar_comando_led(ESP32_NFC_MAC, 6, 1, 0)  # rojo: acceso denegado
     elif cmd == 0x05:
         parpadear(led_amarillo, veces=4, intervalo=0.2)
         led_amarillo()
@@ -353,12 +357,10 @@ while True:
     try:
         if NODE_TYPE == 'salon':
             payloads = [_leer_salon()]
-            ble_cmd = None
         elif NODE_TYPE == 'dormitorio':
-            payloads, ble_cmd = _leer_dormitorio()
+            payloads = _leer_dormitorio()
         elif NODE_TYPE == 'exterior':
             payloads = [_leer_exterior()]
-            ble_cmd = None
     except Exception as e:
         print('  Error sensores: {}'.format(e))
         sistema_error()
@@ -415,10 +417,6 @@ while True:
         # Breve pausa entre envíos en ráfaga para no saturar el stack LoRa
         if idx < n - 1:
             time.sleep(2)
-
-    # Enviar comando LED al ESP32 después del uplink LoRa (evita interferir con el radio)
-    if ble_cmd and _ble and ESP32_NFC_MAC:
-        _ble.enviar_comando_led(ESP32_NFC_MAC, ble_cmd[0], ble_cmd[1], ble_cmd[2])
 
     print('  Siguiente envio en {} s'.format(TX_INTERVAL))
     time.sleep(TX_INTERVAL)
