@@ -89,6 +89,59 @@ NFC_WHITELIST_LOCAL = _cargar_whitelist()
 print('[WL] Whitelist cargada: {} entradas: {}'.format(
     len(NFC_WHITELIST_LOCAL), NFC_WHITELIST_LOCAL))
 
+# ============================================================
+# ESTADO NFC — máquina de estados para el Indicador 6 del ESP32
+# ============================================================
+_NFC_IDLE    = 0
+_NFC_PENDING = 1  # UID desconocido enviado al servidor, ámbar activo
+_NFC_DONE    = 2  # Servidor respondió; verde o rojo mostrándose
+
+_nfc_state     = _NFC_IDLE
+_nfc_tracked   = None         # uid_key que se está verificando con el servidor
+_last_nfc_uids = ['00000000'] # UIDs para incluir en el próximo uplink LoRa
+_tx_ahora      = False        # True = lanzar uplink LoRa inmediatamente
+
+
+def _uid_key(uid_str):
+    n = int(uid_str[:8], 16) if len(uid_str) >= 8 else int(uid_str, 16)
+    return '{:04X}'.format(n & 0xFFFF)
+
+
+def _procesar_nfc(uids):
+    """
+    Evalúa UIDs detectados por el ESP32, actualiza el Indicador 6 del protoboard
+    y activa _tx_ahora si hay un UID desconocido que necesita verificación en el servidor.
+    """
+    global _nfc_state, _nfc_tracked, _last_nfc_uids, _tx_ahora
+
+    _last_nfc_uids = uids if uids else ['00000000']
+    keys = [_uid_key(u) for u in uids]
+
+    # UID rastreado ya no aparece en la cola del ESP32 (TTL expirado) y el servidor
+    # ya respondió → podemos aceptar una nueva tarjeta limpiamente
+    if _nfc_tracked and _nfc_tracked not in keys and _nfc_state == _NFC_DONE:
+        _nfc_state   = _NFC_IDLE
+        _nfc_tracked = None
+
+    for uid_str in uids:
+        key = _uid_key(uid_str)
+        if key in NFC_WHITELIST_LOCAL:
+            print('  NFC: {} → AUTORIZADO'.format(key))
+            _nfc_state   = _NFC_IDLE
+            _nfc_tracked = None
+            if _ble and ESP32_NFC_MAC:
+                _ble.enviar_comando_led(ESP32_NFC_MAC, 6, 0, 1)
+        elif key != _nfc_tracked:
+            # Nueva tarjeta desconocida (o distinta de la que ya estábamos rastreando)
+            print('  NFC: {} → DESCONOCIDO — verificando servidor'.format(key))
+            _nfc_state   = _NFC_PENDING
+            _nfc_tracked = key
+            _tx_ahora    = True
+            if _ble and ESP32_NFC_MAC:
+                _ble.enviar_comando_led(ESP32_NFC_MAC, 6, 1, 1)  # ámbar: verificando
+        # else: mismo UID, estado ya conocido → no tocar el LED
+
+
 if NODE_TYPE not in ('salon', 'dormitorio', 'exterior'):
     print('ERROR: NODE_TYPE invalido. Usa: salon | dormitorio | exterior')
     sistema_error()
@@ -209,38 +262,13 @@ def _leer_salon():
 
 
 def _leer_dormitorio():
-    """
-    Retorna payloads: lista de bytes Cayenne LPP, uno por UID en cola (o uno vacío).
-
-    Feedback inmediato en el Indicador 6 del protoboard (ESP32):
-      - UID en whitelist  → verde inmediato (R=0, G=1), sin esperar al servidor.
-      - UID desconocido   → ámbar inmediato (R=1, G=1) mientras el servidor verifica;
-                            el downlink 0x03/0x04 actualizará al resultado final.
-    """
+    """Construye el payload LoRa con los últimos UIDs detectados por _procesar_nfc."""
     temp, hum, lux = _leer_comunes()
-
-    uids = _ble.escanear_nfc_esp32(ESP32_NFC_MAC) if (_ble and ESP32_NFC_MAC) else []
-
     print('  T={:.1f}C H={:.1f}% Lux={} NFC=[{}]'.format(
-        temp, hum, lux, ', '.join(uids) if uids else 'vacío'))
-
-    for uid_str in uids:
-        uid_int_loc = int(uid_str[:8], 16) if len(uid_str) >= 8 else int(uid_str, 16)
-        uid_key = '{:04X}'.format(uid_int_loc & 0xFFFF)
-        if uid_key in NFC_WHITELIST_LOCAL:
-            print('  NFC local: {} → AUTORIZADO (respuesta inmediata)'.format(uid_key))
-            if _ble and ESP32_NFC_MAC:
-                _ble.enviar_comando_led(ESP32_NFC_MAC, 6, 0, 1)
-        else:
-            print('  NFC local: {} → DESCONOCIDO (verificando con servidor)'.format(uid_key))
-            if _ble and ESP32_NFC_MAC:
-                _ble.enviar_comando_led(ESP32_NFC_MAC, 6, 1, 1)  # ámbar: verificando...
-
-    if not uids:
-        uids = ['00000000']
-
+        temp, hum, lux,
+        ', '.join(_last_nfc_uids) if _last_nfc_uids != ['00000000'] else 'vacío'))
     payloads = []
-    for uid_str in uids:
+    for uid_str in _last_nfc_uids:
         uid_int = int(uid_str[:8], 16) if len(uid_str) >= 8 else int(uid_str, 16)
         uid_analog = (uid_int & 0xFFFF) / 100.0
         lpp = CayenneLPP()
@@ -282,6 +310,7 @@ def _leer_exterior():
 # ============================================================
 
 def _procesar_downlink(data):
+    global _nfc_state
     if not data or len(data) < 1:
         return
     cmd = data[0]
@@ -297,10 +326,12 @@ def _procesar_downlink(data):
         parpadear(led_verde, veces=2, intervalo=0.4)
         if NODE_TYPE == 'dormitorio' and _ble and ESP32_NFC_MAC:
             _ble.enviar_comando_led(ESP32_NFC_MAC, 6, 0, 1)  # verde: acceso concedido
+            _nfc_state = _NFC_DONE
     elif cmd == 0x04:
         parpadear(led_rojo, veces=3, intervalo=0.2)
         if NODE_TYPE == 'dormitorio' and _ble and ESP32_NFC_MAC:
             _ble.enviar_comando_led(ESP32_NFC_MAC, 6, 1, 0)  # rojo: acceso denegado
+            _nfc_state = _NFC_DONE
     elif cmd == 0x05:
         parpadear(led_amarillo, veces=4, intervalo=0.2)
         led_amarillo()
@@ -334,12 +365,13 @@ def _procesar_downlink(data):
 # ============================================================
 # BUCLE PRINCIPAL
 # ============================================================
-while True:
-    print('\n--- Ciclo {} ---'.format(NODE_TYPE))
-    if NODE_TYPE == 'dormitorio':
-        print('  [WL] {} entradas: {}'.format(len(NFC_WHITELIST_LOCAL), sorted(NFC_WHITELIST_LOCAL)))
+# Para dormitorio: el scan NFC (~3 s) marca la cadencia natural del bucle y puede
+# disparar un uplink inmediato (_tx_ahora=True) cuando aparece un UID desconocido.
+# Para salón/exterior: simple polling con sleep de 1 s entre comprobaciones.
+_last_lora_tx = time.time() - TX_INTERVAL  # fuerza TX en el primer ciclo
 
-    # Validar que seguimos conectados a LoRa
+while True:
+    # --- Reconexión LoRa si se perdió la sesión ---
     if not _joined():
         print('ERROR: Perdida conexion LoRa, rejoin necesario')
         while not _joined():
@@ -354,69 +386,82 @@ while True:
         sistema_conectado()
         print('Reconectado a LoRa')
 
-    try:
-        if NODE_TYPE == 'salon':
-            payloads = [_leer_salon()]
-        elif NODE_TYPE == 'dormitorio':
-            payloads = _leer_dormitorio()
-        elif NODE_TYPE == 'exterior':
-            payloads = [_leer_exterior()]
-    except Exception as e:
-        print('  Error sensores: {}'.format(e))
-        sistema_error()
-        time.sleep(TX_INTERVAL)
-        sistema_conectado()
-        continue
+    # --- Scan NFC (solo dormitorio; la ventana de 3 s marca la cadencia del bucle) ---
+    if NODE_TYPE == 'dormitorio':
+        print('  [WL] {} entradas: {}'.format(
+            len(NFC_WHITELIST_LOCAL), sorted(NFC_WHITELIST_LOCAL)))
+        if _ble and ESP32_NFC_MAC:
+            uids = _ble.escanear_nfc_esp32(ESP32_NFC_MAC)
+            _procesar_nfc(uids)
 
-    n = len(payloads)
-    for idx, payload in enumerate(payloads):
-        print('  Payload {}/{} ({} bytes): {}'.format(
-            idx + 1, n, len(payload),
-            binascii.hexlify(payload).decode('utf-8').upper()
-        ))
+    # --- Uplink LoRa: periódico o disparado por UID desconocido ---
+    if _tx_ahora or (time.time() - _last_lora_tx >= TX_INTERVAL):
+        _tx_ahora = False
+        print('\n--- Uplink {} ---'.format(NODE_TYPE))
 
-        sistema_transmitiendo()
-        s.setblocking(True)
-        s.settimeout(3.5)
-
-        # Retry en envío: si falla, reintentar una vez
-        send_ok = False
-        for retry in range(2):
-            try:
-                s.send(payload)
-                print('  Uplink enviado')
-                send_ok = True
-                break
-            except Exception as e:
-                print('  Error enviando (intento {}/2): {}'.format(retry + 1, e))
-                if retry < 1:
-                    time.sleep(1)
-
-        if not send_ok:
-            print('  Fallo envío después de retries')
+        try:
+            if NODE_TYPE == 'salon':
+                payloads = [_leer_salon()]
+            elif NODE_TYPE == 'dormitorio':
+                payloads = _leer_dormitorio()
+            elif NODE_TYPE == 'exterior':
+                payloads = [_leer_exterior()]
+        except Exception as e:
+            print('  Error sensores: {}'.format(e))
+            sistema_error()
+            _last_lora_tx = time.time()
             sistema_conectado()
             continue
 
-        # Recibir downlink (RX1~1s, RX2~2s después de TX)
-        try:
-            data = s.recv(64)
-            if data:
-                print('  Downlink: {}'.format(
-                    binascii.hexlify(data).decode('utf-8').upper()))
-                _procesar_downlink(data)
-            else:
-                print('  Sin downlink (buffer vacío)')
+        n = len(payloads)
+        for idx, payload in enumerate(payloads):
+            print('  Payload {}/{} ({} bytes): {}'.format(
+                idx + 1, n, len(payload),
+                binascii.hexlify(payload).decode('utf-8').upper()
+            ))
+
+            sistema_transmitiendo()
+            s.setblocking(True)
+            s.settimeout(3.5)
+
+            send_ok = False
+            for retry in range(2):
+                try:
+                    s.send(payload)
+                    print('  Uplink enviado')
+                    send_ok = True
+                    break
+                except Exception as e:
+                    print('  Error enviando (intento {}/2): {}'.format(retry + 1, e))
+                    if retry < 1:
+                        time.sleep(1)
+
+            if not send_ok:
+                print('  Fallo envío después de retries')
                 sistema_conectado()
-        except socket.timeout:
-            print('  Sin downlink (timeout RX)')
-            sistema_conectado()
-        except Exception as e:
-            print('  Error recibiendo: {}'.format(e))
-            sistema_conectado()
+                continue
 
-        # Breve pausa entre envíos en ráfaga para no saturar el stack LoRa
-        if idx < n - 1:
-            time.sleep(2)
+            try:
+                data = s.recv(64)
+                if data:
+                    print('  Downlink: {}'.format(
+                        binascii.hexlify(data).decode('utf-8').upper()))
+                    _procesar_downlink(data)
+                else:
+                    print('  Sin downlink (buffer vacío)')
+                    sistema_conectado()
+            except socket.timeout:
+                print('  Sin downlink (timeout RX)')
+                sistema_conectado()
+            except Exception as e:
+                print('  Error recibiendo: {}'.format(e))
+                sistema_conectado()
 
-    print('  Siguiente envio en {} s'.format(TX_INTERVAL))
-    time.sleep(TX_INTERVAL)
+            if idx < n - 1:
+                time.sleep(2)
+
+        _last_lora_tx = time.time()
+
+    elif NODE_TYPE != 'dormitorio':
+        # Salón/exterior sin NFC: pequeña pausa para no hacer busy-wait
+        time.sleep(1)

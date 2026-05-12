@@ -174,11 +174,16 @@ class LEDCommandCallback : public BLECharacteristicCallbacks {
 
         _setLEDState(ledIndex, redOn != 0, greenOn != 0);
 
-        // Programar auto-apagado solo para el indicador NFC (índice 5)
+        // Auto-apagado del indicador NFC: sólo verde (concedido) o rojo (denegado).
+        // Ámbar (R+G, verificando servidor) se mantiene hasta que llegue la respuesta.
         if (ledIndex == 5) {
-            bool green = (greenOn != 0);
-            unsigned long timeout = green ? 1500UL : 2000UL;
-            nfcLedOffAt = millis() + timeout;
+            bool amber = (redOn != 0 && greenOn != 0);
+            if (!amber) {
+                unsigned long timeout = (greenOn != 0) ? 1500UL : 2000UL;
+                nfcLedOffAt = millis() + timeout;
+            } else {
+                nfcLedOffAt = 0;  // sin auto-apagado mientras se espera al servidor
+            }
         }
     }
 };
