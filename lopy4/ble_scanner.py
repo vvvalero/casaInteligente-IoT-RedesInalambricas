@@ -250,10 +250,16 @@ class BLEScanner:
             except TypeError:
                 return str(u).replace('-', '').lower()
 
-        for attempt in range(2):
+        _delays = [300, 800, 1500]
+        for attempt in range(3):
             ble_client = None
             try:
-                time.sleep_ms(200)
+                try:
+                    self._bt.stop_scan()
+                except Exception:
+                    pass
+                time.sleep_ms(_delays[attempt])
+
                 ble_client = self._bt.connect(mac_bytes)
                 if not ble_client:
                     raise Exception('connect returned None')
@@ -282,9 +288,7 @@ class BLEScanner:
                 return True
 
             except Exception as e:
-                print('[BLE-LED] Batch error (intento {}/2): {}'.format(attempt + 1, e))
-                if attempt == 0:
-                    time.sleep_ms(600)
+                print('[BLE-LED] Batch error (intento {}/3): {}'.format(attempt + 1, e))
             finally:
                 if ble_client:
                     try:
