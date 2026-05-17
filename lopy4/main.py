@@ -47,9 +47,6 @@ from led import (sistema_arrancando, sistema_join_espera, sistema_conectado,
                  led_apagar, led_desde_bytes, led_rojo, led_verde, led_azul, led_amarillo,
                  led_naranja, led_blanco, led_magenta, parpadear)
 
-# ============================================================
-# CREDENCIALES Y CONFIGURACION
-# ============================================================
 try:
     from credentials import APP_EUI, APP_KEY, NODE_TYPE, TX_INTERVAL
 except ImportError:
@@ -64,13 +61,10 @@ try:
 except ImportError:
     ESP32_NFC_MAC = None
 
-# ============================================================
-# WHITELIST NFC LOCAL — feedback inmediato sin esperar downlink
-# ============================================================
 _NFC_WL_FILE = '/flash/nfc_whitelist.txt'
 
 def _cargar_whitelist():
-    """Lee la whitelist del fichero en flash; si no existe usa el default de credentials."""
+    """Lee la whitelist de flash; si no existe usa el default de credentials."""
     try:
         with open(_NFC_WL_FILE, 'r') as f:
             return set(k.strip() for k in f.read().split(',') if k.strip())
@@ -93,9 +87,6 @@ NFC_WHITELIST_LOCAL = _cargar_whitelist()
 print('[WL] Whitelist cargada: {} entradas: {}'.format(
     len(NFC_WHITELIST_LOCAL), NFC_WHITELIST_LOCAL))
 
-# ============================================================
-# ESTADO NFC — máquina de estados para el Indicador 6 del ESP32
-# ============================================================
 _NFC_IDLE    = 0
 _NFC_PENDING = 1  # UID desconocido enviado al servidor, ámbar activo
 _NFC_DONE    = 2  # Servidor respondió; verde o rojo mostrándose
@@ -158,9 +149,6 @@ if NODE_TYPE not in ('salon', 'dormitorio', 'exterior'):
 
 ROOM_ID = {'salon': 1, 'dormitorio': 2, 'exterior': 3}
 
-# ============================================================
-# INICIALIZACION DE HARDWARE COMUN (Pysense)
-# ============================================================
 sistema_arrancando()
 
 py = Pysense()
@@ -172,9 +160,6 @@ print('Nodo: {}'.format(NODE_TYPE))
 print('Intervalo TX: {} s'.format(TX_INTERVAL))
 print('DevEUI: {}'.format(binascii.hexlify(LoRa().mac()).decode('utf-8').upper()))
 
-# ============================================================
-# INICIALIZACION ESPECIFICA POR NODO
-# ============================================================
 _mpl = None
 _acc = None
 _nfc = None
@@ -206,9 +191,6 @@ elif NODE_TYPE == 'exterior':
     except Exception as e:
         print('[Exterior] BLE scanner no disponible: {}'.format(e))
 
-# ============================================================
-# CONEXION LORAWAN (OTAA)
-# ============================================================
 lora = LoRa(mode=LoRa.LORAWAN, region=LoRa.EU868)
 # NOTA: nvram_erase() solo se usa UNA VEZ al provisionar.
 # NO descomentar en producción — borra la sesión guardada y fuerza rejoin cada arranque
@@ -240,10 +222,6 @@ sistema_conectado()
 s = socket.socket(socket.AF_LORA, socket.SOCK_RAW)
 s.setsockopt(socket.SOL_LORA, socket.SO_DR, 5)
 
-# ============================================================
-# LECTURAS POR NODO
-# ============================================================
-
 def _leer_comunes():
     return si.temperature(), si.humidity(), lt.light()[0]
 
@@ -270,7 +248,6 @@ def _leer_salon():
 
 
 def _leer_dormitorio():
-    """Construye el payload LoRa con los últimos UIDs detectados por _procesar_nfc."""
     temp, hum, lux = _leer_comunes()
     print('  T={:.1f}C H={:.1f}% Lux={} NFC=[{}]'.format(
         temp, hum, lux,
@@ -312,10 +289,6 @@ def _leer_exterior():
     lpp.add_digital_input(5, ROOM_ID['exterior'])
     return bytes(lpp.get_buffer())
 
-
-# ============================================================
-# PROCESADO DE DOWNLINK
-# ============================================================
 
 def _procesar_downlink(data):
     global _nfc_state
@@ -394,16 +367,11 @@ def _procesar_downlink(data):
     sistema_downlink_recibido()
 
 
-# ============================================================
-# BUCLE PRINCIPAL
-# ============================================================
-# Para dormitorio: el scan NFC (~3 s) marca la cadencia natural del bucle y puede
-# disparar un uplink inmediato (_tx_ahora=True) cuando aparece un UID desconocido.
-# Para salón/exterior: simple polling con sleep de 1 s entre comprobaciones.
+# Para dormitorio, el scan BLE-NFC (~3 s) es la cadencia natural del bucle.
+# Para salón/exterior, hay un sleep de 1 s entre iteraciones.
 _last_lora_tx = time.time() - TX_INTERVAL  # fuerza TX en el primer ciclo
 
 while True:
-    # --- Reconexión LoRa si se perdió la sesión ---
     if not _joined():
         print('ERROR: Perdida conexion LoRa, rejoin necesario')
         while not _joined():
@@ -418,7 +386,6 @@ while True:
         sistema_conectado()
         print('Reconectado a LoRa')
 
-    # --- Scan NFC (solo dormitorio; la ventana de 3 s marca la cadencia del bucle) ---
     if NODE_TYPE == 'dormitorio':
         print('  [WL] {} entradas: {}'.format(
             len(NFC_WHITELIST_LOCAL), sorted(NFC_WHITELIST_LOCAL)))
@@ -426,7 +393,6 @@ while True:
             uids = _ble.escanear_nfc_esp32(ESP32_NFC_MAC)
             _procesar_nfc(uids)
 
-    # --- Uplink LoRa: periódico o disparado por UID desconocido ---
     if _tx_ahora or (time.time() - _last_lora_tx >= TX_INTERVAL):
         _tx_ahora = False
         print('\n--- Uplink {} ---'.format(NODE_TYPE))

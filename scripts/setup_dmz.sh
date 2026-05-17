@@ -84,8 +84,8 @@ fi
 
 echo ""
 echo "--- [3/5] Arrancando Nginx en HTTP para validación Let's Encrypt ---"
-# Nginx no puede arrancar con la config HTTPS si el certificado aún no existe.
-# Usamos config temporal HTTP-only para la validación ACME.
+# Nginx no arranca con config HTTPS si el certificado no existe aún.
+# Config temporal HTTP-only para la validación ACME.
 NGINX_CONF="docker/nginx/conf.d/smarthome.conf"
 cp "$NGINX_CONF" "${NGINX_CONF}.bak"
 cat > "$NGINX_CONF" << 'NGINXEOF'
@@ -121,7 +121,6 @@ docker run --rm \
 
 ok "Certificado TLS obtenido para $DOMAIN"
 
-# Restaurar configuración HTTPS completa
 cp "${NGINX_CONF}.bak" "$NGINX_CONF"
 rm "${NGINX_CONF}.bak"
 ok "Configuración Nginx HTTPS restaurada"

@@ -50,7 +50,7 @@ function isNodeOnline(node) {
     }
 }
 
-// ---------------- Dashboard ----------------
+// --- Dashboard ---
 let dashboardNodesData = [];
 let selectedNodeId = null;
 let viewMode = '3d';
@@ -73,7 +73,6 @@ async function fetchNodos() {
         document.querySelector('.dot').style.backgroundColor = 'var(--warning)';
     }
 
-    // Inicializar nodos visibles la primera vez
     if (visibleNodes.size === 0) {
         dashboardNodesData.forEach(n => visibleNodes.add(n.id.replace('Sensor:', '')));
     }
@@ -333,7 +332,7 @@ async function sendBlink(nodoId) {
     }
 }
 
-// ---------------- Accesos NFC ----------------
+// --- Accesos NFC ---
 function normalizeUID(uid) {
     const cleaned = uid.toUpperCase().replace(/[^0-9A-F]/g, '');
     if (cleaned.length === 0) return null;
@@ -455,7 +454,7 @@ async function fetchAccessLog() {
     }
 }
 
-// ---------------- Alertas ----------------
+// --- Alertas ---
 async function fetchAlertas() {
     if (!document.getElementById('alertas-activas')) return;
     try {
@@ -504,7 +503,7 @@ async function fetchAlertas() {
     }
 }
 
-// ---------------- Mobile Sidebar ----------------
+// --- Sidebar móvil ---
 function toggleSidebar() {
     document.body.classList.toggle('sidebar-open');
 }
@@ -513,18 +512,16 @@ function closeSidebar() {
     document.body.classList.remove('sidebar-open');
 }
 
-// Close sidebar when a nav link is clicked on mobile
 document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.sidebar a').forEach(a => {
         a.addEventListener('click', closeSidebar);
     });
-    // Close on resize to desktop
     window.addEventListener('resize', () => {
         if (window.innerWidth > 768) closeSidebar();
     });
 });
 
-// ---------------- Estado ----------------
+// --- Estado ---
 async function fetchStatus() {
     if (!document.getElementById('api-status')) return;
     try {

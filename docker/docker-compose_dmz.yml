@@ -13,10 +13,7 @@
 
 services:
 
-  # -------------------------------------------------------
-  # Nginx — Proxy inverso + terminación TLS
-  # Único servicio expuesto a internet (puertos 80 y 443)
-  # -------------------------------------------------------
+  # Nginx — proxy inverso + TLS, único servicio expuesto a internet
   nginx:
     image: nginx:1.25-alpine
     container_name: smarthome-nginx
@@ -36,9 +33,7 @@ services:
       - notification-server
     restart: unless-stopped
 
-  # -------------------------------------------------------
-  # Certbot — Certificados TLS Let's Encrypt
-  # -------------------------------------------------------
+  # Certbot — renovación automática de certificados Let's Encrypt
   certbot:
     image: certbot/certbot:latest
     container_name: smarthome-certbot
@@ -48,9 +43,6 @@ services:
     entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
     restart: unless-stopped
 
-  # -------------------------------------------------------
-  # Orion Context Broker
-  # -------------------------------------------------------
   orion:
     image: fiware/orion:3.10.1
     hostname: orion
@@ -70,9 +62,6 @@ services:
     restart: unless-stopped
     # Puerto 1026 NO expuesto al host — solo accesible internamente
 
-  # -------------------------------------------------------
-  # MongoDB
-  # -------------------------------------------------------
   mongo-db:
     image: mongo:6.0
     hostname: mongo-db
@@ -87,10 +76,7 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # -------------------------------------------------------
-  # IoT Agent UltraLight 2.0
-  # Puerto 4041 NO expuesto directamente — Nginx hace el proxy
-  # -------------------------------------------------------
+  # IoT Agent UltraLight 2.0 — puerto 4041 solo accesible internamente
   iot-agent:
     image: quay.io/fiware/iotagent-ul:latest
     hostname: iot-agent
@@ -131,9 +117,7 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # -------------------------------------------------------
-  # Mosquitto MQTT Broker (solo interno entre contenedores)
-  # -------------------------------------------------------
+  # Mosquitto MQTT — solo interno entre contenedores
   mosquitto:
     image: eclipse-mosquitto:2.0
     hostname: mosquitto
@@ -145,11 +129,7 @@ services:
     restart: unless-stopped
     # Puertos 1883/9001 NO expuestos — solo uso interno
 
-  # -------------------------------------------------------
-  # Notification Server — servidor Flask de automatización
-  # Corre dentro de Docker en el DMZ (no fuera como en local)
-  # Puerto 5000 NO expuesto — Nginx lo proxea si es necesario
-  # -------------------------------------------------------
+  # Notification Server Flask — puerto 5000 interno, Nginx lo proxea
   notification-server:
     build:
       context: ..

@@ -34,12 +34,7 @@ except (OSError, AttributeError):
     print("[LED] Advertencia: LED RGB no disponible (probablemente simulación)")
 
 
-# ============================================================
-# ESTADO DEL SISTEMA (colores tenues)
-# ============================================================
-
 def sistema_arrancando():
-    """Azul tenue: dispositivo iniciando."""
     if _HARDWARE_AVAILABLE:
         try:
             pycom.rgbled(0x000010)
@@ -48,7 +43,6 @@ def sistema_arrancando():
 
 
 def sistema_join_espera():
-    """Rojo tenue: esperando join OTAA."""
     if _HARDWARE_AVAILABLE:
         try:
             pycom.rgbled(0x100000)
@@ -57,7 +51,6 @@ def sistema_join_espera():
 
 
 def sistema_conectado():
-    """Verde tenue: conectado y en espera."""
     if _HARDWARE_AVAILABLE:
         try:
             pycom.rgbled(0x001000)
@@ -66,7 +59,6 @@ def sistema_conectado():
 
 
 def sistema_transmitiendo():
-    """Blanco destello: enviando uplink."""
     if _HARDWARE_AVAILABLE:
         try:
             pycom.rgbled(0x101010)
@@ -77,7 +69,6 @@ def sistema_transmitiendo():
 
 
 def sistema_error():
-    """Rojo fijo: error crítico."""
     if _HARDWARE_AVAILABLE:
         try:
             pycom.rgbled(0xFF0000)
@@ -86,7 +77,6 @@ def sistema_error():
 
 
 def sistema_downlink_recibido():
-    """Cian destello: downlink procesado."""
     if _HARDWARE_AVAILABLE:
         try:
             pycom.rgbled(0x00FFFF)
@@ -96,12 +86,7 @@ def sistema_downlink_recibido():
             pass
 
 
-# ============================================================
-# EVENTOS (colores más brillantes, controlados por downlink)
-# ============================================================
-
 def led_apagar():
-    """Apaga el LED."""
     if _HARDWARE_AVAILABLE:
         try:
             pycom.rgbled(0x000000)
@@ -110,7 +95,6 @@ def led_apagar():
 
 
 def led_rojo():
-    """Rojo: acceso NFC denegado / alerta crítica."""
     if _HARDWARE_AVAILABLE:
         try:
             pycom.rgbled(0xFF0000)
@@ -119,7 +103,6 @@ def led_rojo():
 
 
 def led_verde():
-    """Verde: acceso NFC concedido."""
     if _HARDWARE_AVAILABLE:
         try:
             pycom.rgbled(0x00FF00)
@@ -128,7 +111,6 @@ def led_verde():
 
 
 def led_azul():
-    """Azul: alerta temperatura baja."""
     if _HARDWARE_AVAILABLE:
         try:
             pycom.rgbled(0x0000FF)
@@ -137,7 +119,6 @@ def led_azul():
 
 
 def led_amarillo():
-    """Amarillo: alerta aforo BLE."""
     if _HARDWARE_AVAILABLE:
         try:
             pycom.rgbled(0xFFFF00)
@@ -146,7 +127,6 @@ def led_amarillo():
 
 
 def led_naranja():
-    """Naranja: alerta temperatura alta."""
     if _HARDWARE_AVAILABLE:
         try:
             pycom.rgbled(0xFF4400)
@@ -155,7 +135,6 @@ def led_naranja():
 
 
 def led_magenta():
-    """Magenta: vibración detectada."""
     if _HARDWARE_AVAILABLE:
         try:
             pycom.rgbled(0xFF00FF)
@@ -164,7 +143,6 @@ def led_magenta():
 
 
 def led_blanco():
-    """Blanco: alerta luminosidad exterior."""
     if _HARDWARE_AVAILABLE:
         try:
             pycom.rgbled(0xFFFFFF)

@@ -1,13 +1,6 @@
-# ble_scanner.py — Escáner BLE usando el chip integrado del LoPy4
-# ============================================================
-# El LoPy4 tiene BLE integrado (basado en ESP32).
-# Este módulo usa el modo Observer para escanear dispositivos
-# BLE cercanos y contar cuántos hay, lo que sirve como
-# proxy de presencia/aforo sin necesidad de hardware adicional.
-#
-# No requiere ningún módulo externo: usa network.Bluetooth
-# incluido en el firmware de Pycom.
-# ============================================================
+# ble_scanner.py — Escáner BLE con el chip integrado del LoPy4
+# Usa network.Bluetooth (Pycom firmware) para contar dispositivos
+# cercanos (proxy de aforo) y leer la cola NFC del ESP32.
 
 from network import Bluetooth
 import time
