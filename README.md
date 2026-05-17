@@ -173,11 +173,14 @@ ESP32_NFC_MAC = 'AA:BB:CC:DD:EE:FF'   # en mayúsculas
 ```
 === Casa Inteligente IoT ===
 Nodo: salon
+Intervalo TX: 30 s
+DevEUI: A8610A33374AFA17
 Intentando join OTAA...
-  Esperando join...
+  Esperando join (reintentando en 2s)...
 Join completado!
---- Ciclo salon ---
-  T=25.2C H=43.0% Lux=36 P=941.1hPa
+--- Uplink salon ---
+  T=25.2C H=43.0% Lux=36 Acc=(0.00,0.00,0.99)g
+  Payload 1/1 (13 bytes): 016700E70268...
   Uplink enviado
 ```
 
@@ -262,15 +265,15 @@ Deberías ver `temperature`, `humidity`, `luminosity` etc. con valores reales y 
 
 ## Payload Cayenne LPP por nodo
 
-### Nodo 1 — Salón (~30 bytes)
+### Nodo 1 — Salón (~13 bytes)
 
 | Canal | Tipo | Código | Dato |
 |---|---|---|---|
 | 1 | Temperature | 0x67 | Temperatura °C |
 | 2 | Humidity | 0x68 | Humedad %RH |
 | 3 | Luminosity | 0x65 | Luminosidad lux |
-| 5 | Accelerometer | 0x71 | Aceleración X/Y/Z en g |
-| 6 | Digital Input | 0x00 | ID habitación (1) |
+| 4 | Accelerometer | 0x71 | Aceleración X/Y/Z en g |
+| 5 | Digital Input | 0x00 | ID habitación (1) |
 
 ### Nodo 2 — Dormitorio (~21 bytes)
 
@@ -282,12 +285,13 @@ Deberías ver `temperature`, `humidity`, `luminosity` etc. con valores reales y 
 | 4 | Analog Input | 0x02 | UID NFC parcial (÷100) |
 | 5 | Digital Input | 0x00 | ID habitación (2) |
 
-### Nodo 3 — Exterior (~25 bytes)
+### Nodo 3 — Exterior (~10 bytes)
 
 | Canal | Tipo | Código | Dato |
 |---|---|---|---|
 | 1 | Temperature | 0x67 | Temperatura °C |
 | 2 | Humidity | 0x68 | Humedad %RH |
+| 3 | Luminosity | 0x65 | Luminosidad lux |
 | 4 | Digital Input | 0x00 | Dispositivos BLE cercanos |
 | 5 | Digital Input | 0x00 | ID habitación (3) |
 
@@ -304,9 +308,12 @@ downlinks que cambian su color según el evento detectado.
 | 0x02 | Parpadear LED | R, G, B (0-255) | Parpadeo 3× |
 | 0x03 | Acceso NFC OK | — | Verde 2× |
 | 0x04 | Acceso NFC denegado | — | Rojo 3× rápido |
-| 0x05 | Alerta aforo BLE | — | Amarillo 4× |
-| 0x06 | Alerta temperatura | 0x00=frío / 0x01=calor | Azul o naranja |
-| 0x07 | Alerta exterior | — | Blanco 2× |
+| 0x05 | Alerta aforo BLE | 0x01=alerta / 0x00=normal | Amarillo 4× |
+| 0x06 | Alerta sensores | 0x00=frío / 0x01=calor / 0x02=normal / 0x03=humedad | Azul, naranja, verde o amarillo |
+| 0x07 | Alerta exterior | 0x01=alerta / 0x00=normal | Blanco 2× |
+| 0x08 | Sync whitelist NFC | byte 1=count, luego 2 bytes por UID | — (actualiza whitelist en flash) |
+| 0x09 | Comando LED ESP32 | led_id, red_on, green_on | Indicador individual del protoboard |
+| 0x0A | Batch LEDs ESP32 | 5 bytes: estado indicadores 1-5 | Todos los indicadores en una trama |
 
 ---
 
@@ -316,12 +323,12 @@ downlinks que cambian su color según el evento detectado.
 |---|---|---|---|
 | 1 | `temperature > 28°C` | Activa `Alert:temp_high` | LED naranja |
 | 2 | `temperature < 10°C` | Activa `Alert:temp_low` | LED azul |
-| 3 | `humidity > 80%` | Activa `Alert:humidity` | — |
+| 3 | `humidity > 80%` | Activa `Alert:humidity` | LED amarillo |
 | 4 | `vibrationDetected == true` | Activa `Alert:vibration` | LED magenta |
 | 5 | NFC UID autorizado | Crea `AccessLog:N` authorized=true | LED verde (nodo 2) |
 | 6 | NFC UID denegado | Crea `AccessLog:N` + `Alert:nfc_denied` | LED rojo (nodo 2) |
 | 7 | `bleDevicesNearby > 5` | Activa `Alert:aforo` | LED amarillo (nodo 3) |
-| 8 | `luminosity < 50 lux` exterior | — | LED blanco (nodo 3) |
+| 8 | `luminosity < 50 lux` exterior | Activa `Alert:lux_low` | LED blanco (nodo 3) |
 
 ---
 
@@ -330,20 +337,21 @@ downlinks que cambian su color según el evento detectado.
 ```
 smart-home/
 ├── .env.example                          # Plantilla variables de entorno (DMZ)
-├── .env                                  # Variables de entorno configuradas
+├── .env                                  # Variables de entorno configuradas (no en Git)
 ├── .gitignore
 ├── README.md
-├── services_dmz                          # Gestión Docker DMZ: start|stop|reset
+├── services_dmz                          # Gestión Docker DMZ: start|stop|reset|logs
 │
 ├── esp32/
-│   └── nfc_ble_broadcaster/
-│       └── nfc_ble_broadcaster.ino       # ESP32: lee PN532 y emite UID por BLE advertising
+│   ├── nfc_ble_broadcaster/
+│   │   └── nfc_ble_broadcaster.ino       # ESP32: lee PN532 y emite UID por BLE advertising
+│   └── leds_test_all/
+│       └── leds_test_all.ino             # Sketch de test para verificar el cableado de LEDs
 │
 ├── lopy4/
 │   ├── main.py                           # Bucle principal — soporta los 3 nodos
 │   ├── boot.py                           # Arranque del dispositivo
 │   ├── led.py                            # Control LED RGB integrado del LoPy4
-│   ├── nfc.py                            # Driver PN532 I²C (reservado / no usado activamente)
 │   ├── ble_scanner.py                    # Escáner BLE: aforo (exterior) + NFC via ESP32 (dormitorio)
 │   ├── credentials.example.py            # Plantilla — SÍ se sube a Git
 │   ├── credentials.py                    # Credenciales reales — NO se sube a Git
@@ -353,9 +361,10 @@ smart-home/
 │       ├── CayenneLPP.py
 │       ├── SI7006A20.py                  # Temp + Humedad
 │       ├── LTR329ALS01.py                # Luminosidad
-│       ├── MPL3115A2.py                  # Sensor no usado
 │       ├── LIS2HH12.py                   # Acelerómetro 3 ejes
-│       └── pysense.py / pycoproc.py      # Placa de expansión Pysense
+│       ├── pysense.py                    # Placa de expansión Pysense
+│       ├── pycoproc.py                   # Coprocesador Pycom (dependencia de pysense)
+│       └── pytrack.py                    # Librería Pytrack (incluida, no usada activamente)
 │
 ├── fiware/
 │   ├── ngsi/ngsi_crear_entidades.sh      # Crea House, Rooms, Sensors, Alerts
@@ -371,9 +380,10 @@ smart-home/
 │       └── conf.d/smarthome.conf         # Proxy inverso → api.vvalero.dev
 │
 └── scripts/
-    ├── notification_server.py            # Servidor Flask: 8 reglas + TTN downlinks
+    ├── notification_server.py            # Servidor Flask: 8 reglas + TTN downlinks + BLE LEDs
     ├── setup_dmz.sh                      # Instalación automática en el DMZ
-    └── requirements.txt                  # Dependencias Python (Flask, requests)
+    ├── sim_alertas.sh                    # Script para simular alertas manualmente (desarrollo)
+    └── requirements.txt                  # Dependencias Python (Flask, requests, bleak)
 ```
 
 ---
